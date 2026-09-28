@@ -60,10 +60,10 @@ def check_working_hours() -> Tuple[bool, str]:
 class GeneratorService:
 
     @staticmethod
-    async def get_state(session: AsyncSession) -> GeneratorState:
-        result = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
+    async def get_state(session: AsyncSession, gen_id: int = 1) -> GeneratorState:
+        result = await session.execute(select(GeneratorState).where(GeneratorState.id == gen_id))
         gen = result.scalar_one_or_none()
-        if not gen:
+        if not gen and gen_id == 1:
             gen = GeneratorState(
                 id=1,
                 name=settings.GENERATOR_NAME,
@@ -81,12 +81,15 @@ class GeneratorService:
         return gen
 
     @staticmethod
-    async def get_dashboard_data(session: AsyncSession) -> Dict[str, Any]:
-        cached = await cache.get("generator:dashboard")
+    async def get_dashboard_data(session: AsyncSession, gen_id: int = 1) -> Dict[str, Any]:
+        cached = await cache.get(f"generator:{gen_id}:dashboard")
         if cached:
             return cached
 
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
+        if not gen:
+            return {}
+
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
         current_run_hours = 0.0
@@ -117,7 +120,7 @@ class GeneratorService:
         start_of_day_utc = start_of_day_local.astimezone(timezone.utc).replace(tzinfo=None)
 
         today_runs_res = await session.execute(
-            select(RunLog).where(RunLog.stop_time >= start_of_day_utc)
+            select(RunLog).where(RunLog.generator_id == gen_id, RunLog.stop_time >= start_of_day_utc)
         )
         today_runs = today_runs_res.scalars().all()
         today_runs_fuel = sum(r.fuel_consumed for r in today_runs)
@@ -125,7 +128,7 @@ class GeneratorService:
 
         # Get last refuel
         last_fuel_res = await session.execute(
-            select(FuelLog).order_by(FuelLog.id.desc()).limit(1)
+            select(FuelLog).where(FuelLog.generator_id == gen_id).order_by(FuelLog.id.desc()).limit(1)
         )
         last_fuel = last_fuel_res.scalar_one_or_none()
         last_refuel_data = None
@@ -181,10 +184,13 @@ class GeneratorService:
             },
             "currency": settings.CURRENCY,
             "timezone": settings.TIMEZONE,
+            "fuel_type": gen.fuel_type,
+            "fuel_price": round(gen.fuel_price, 2) if gen.fuel_price else 0.0,
+            "auto_update_price": gen.auto_update_price,
         }
 
         ttl = 2 if gen.is_running else 10
-        await cache.set("generator:dashboard", data, ttl=ttl)
+        await cache.set(f"generator:{gen_id}:dashboard", data, ttl=ttl)
         return data
 
     @staticmethod
@@ -194,7 +200,7 @@ class GeneratorService:
         user_name: str,
         custom_start_time: Optional[datetime] = None
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         if gen.is_running:
             start_str = format_dt(gen.current_start_time)
             return False, f"⚠️ Генератор вже запущено ({start_str}) оператором {gen.current_start_user_name or 'Невідомо'}!", None
@@ -217,7 +223,7 @@ class GeneratorService:
 
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
 
         return True, "✅ Генератор успішно запущено!", {
             "start_time": start_time.replace(tzinfo=timezone.utc).isoformat(),
@@ -235,7 +241,7 @@ class GeneratorService:
         custom_stop_time: Optional[datetime] = None,
         notes: Optional[str] = None
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         if not gen.is_running:
             return False, "⚠️ Генератор зараз не працює!", None
 
@@ -252,7 +258,7 @@ class GeneratorService:
         end_fuel = round(max(0.0, start_fuel - fuel_consumed), 2)
         new_total_hours = round(gen.total_hours + duration_hours, 2)
 
-        run_log = RunLog(
+        run_log = RunLog(generator_id=gen_id, 
             start_time=start_time,
             stop_time=stop_time,
             duration_hours=round(duration_hours, 2),
@@ -279,7 +285,7 @@ class GeneratorService:
 
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
 
         hours_to_maint = (gen.last_maintenance_hours + gen.maintenance_interval_hours) - new_total_hours
 
@@ -309,7 +315,7 @@ class GeneratorService:
         if amount_liters <= 0:
             return False, "❌ Об'єм заправки повинен бути більше 0!", {}
 
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         fuel_before = gen.current_fuel
         fuel_after = round(fuel_before + amount_liters, 2)
 
@@ -319,7 +325,7 @@ class GeneratorService:
         clean_receipt = receipt_number.strip() if receipt_number and receipt_number.strip() else None
         clean_delivered = delivered_by.strip() if delivered_by and delivered_by.strip() else None
 
-        fuel_log = FuelLog(
+        fuel_log = FuelLog(generator_id=gen_id, 
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             amount_liters=amount_liters,
             fuel_before=fuel_before,
@@ -334,7 +340,7 @@ class GeneratorService:
         session.add(fuel_log)
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
 
         return True, "✅ Заправку успішно зафіксовано!", {
             "amount": amount_liters,
@@ -359,7 +365,7 @@ class GeneratorService:
         parts_replaced: Optional[str] = None,
         cost: Optional[float] = None
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         hours_at_maint = gen.total_hours
 
         if is_main:
@@ -386,7 +392,7 @@ class GeneratorService:
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         final_title = title or default_title
 
-        maint_log = MaintenanceLog(
+        maint_log = MaintenanceLog(generator_id=gen_id, 
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             hours_at_maintenance=hours_at_maint,
             next_maintenance_hours=next_maint_hours,
@@ -402,7 +408,7 @@ class GeneratorService:
         session.add(maint_log)
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
 
         return True, f"✅ {final_title} успішно збережено!", {
             "hours_at_maint": hours_at_maint,
@@ -415,17 +421,11 @@ class GeneratorService:
         }
 
     @staticmethod
-    async def reset_counters(
-        session: AsyncSession,
-        user_id: int,
-        user_name: str,
-        reset_type: str,
-        reason: str
-    ) -> Tuple[bool, str, Dict[str, Any]]:
+    async def reset_counters(session: AsyncSession, user_id: int, user_name: str, reset_type: str, reason: str, gen_id: int = 1) -> Tuple[bool, str, Dict[str, Any]]:
         if not reason or len(reason.strip()) < 3:
             return False, "❌ Обов'язково вкажіть причину скидання лічильників!", {}
 
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         old_state = {
             "total_hours": gen.total_hours,
             "current_fuel": gen.current_fuel,
@@ -463,7 +463,7 @@ class GeneratorService:
 
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        audit = AuditResetLog(
+        audit = AuditResetLog(generator_id=gen_id, 
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             reset_type=reset_type,
             reason=reason.strip(),
@@ -474,7 +474,7 @@ class GeneratorService:
         session.add(audit)
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
 
         return True, "✅ Лічильники успішно скинуто та зафіксовано в журналі аудиту!", {
             "reset_type": reset_type,
@@ -494,8 +494,12 @@ class GeneratorService:
         tank_capacity: Optional[float] = None,
         maintenance_interval: Optional[float] = None,
         last_maint_hours: Optional[float] = None,
+        fuel_type: Optional[str] = None,
+        fuel_price: Optional[float] = None,
+        auto_update_price: Optional[bool] = None,
+        gen_id: int = 1
     ) -> GeneratorState:
-        gen = await GeneratorService.get_state(session)
+        gen = await GeneratorService.get_state(session, gen_id)
         changes = []
         old_state = {
             "total_hours": gen.total_hours,
@@ -504,6 +508,9 @@ class GeneratorService:
             "tank_capacity": gen.tank_capacity,
             "maintenance_interval_hours": gen.maintenance_interval_hours,
             "last_maintenance_hours": gen.last_maintenance_hours,
+            "fuel_type": gen.fuel_type,
+            "fuel_price": gen.fuel_price,
+            "auto_update_price": gen.auto_update_price,
         }
 
         if total_hours is not None and total_hours != gen.total_hours:
@@ -524,11 +531,20 @@ class GeneratorService:
         if last_maint_hours is not None and last_maint_hours != gen.last_maintenance_hours:
             changes.append(f"Останнє ТО (мч): {gen.last_maintenance_hours} -> {last_maint_hours}")
             gen.last_maintenance_hours = last_maint_hours
+        if fuel_type is not None and fuel_type != gen.fuel_type:
+            changes.append(f"Тип палива: {gen.fuel_type} -> {fuel_type}")
+            gen.fuel_type = fuel_type
+        if fuel_price is not None and fuel_price != gen.fuel_price:
+            changes.append(f"Ціна: {gen.fuel_price} -> {fuel_price}")
+            gen.fuel_price = fuel_price
+        if auto_update_price is not None and auto_update_price != gen.auto_update_price:
+            changes.append(f"Авто-ціна: {gen.auto_update_price} -> {auto_update_price}")
+            gen.auto_update_price = auto_update_price
 
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         
         if changes:
-            audit = AuditResetLog(
+            audit = AuditResetLog(generator_id=gen_id, 
                 timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
                 reset_type="calibration",
                 reason="Ручне коригування (калібрування)",
@@ -540,5 +556,5 @@ class GeneratorService:
 
         await session.commit()
         await session.refresh(gen)
-        await cache.delete("generator:dashboard")
+        await cache.delete(f"generator:{gen_id}:dashboard")
         return gen

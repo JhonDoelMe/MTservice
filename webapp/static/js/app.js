@@ -38,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
 let currentStatus = null;
 let liveTimerInterval = null;
 let activeStartTime = null;
+window.currentGenId = parseInt(localStorage.getItem("currentGenId")) || 1;
 
 // Haptic feedback helper
 function haptic(type = "light") {
@@ -53,17 +54,20 @@ function haptic(type = "light") {
 
 // Fetch helper with Telegram initData
 async function apiCall(endpoint, method = "GET", body = null) {
+  let url = endpoint;
+  if (url.startsWith("/api/")) {
+    const sep = url.includes("?") ? "&" : "?";
+    url += `${sep}gen_id=${window.currentGenId}`;
+  }
+
   const headers = {
     "Content-Type": "application/json",
     "X-Telegram-Init-Data": tg?.initData || ""
   };
   const config = { method, headers };
-  if (body) {
-    config.body = JSON.stringify(body);
-  }
-
+  if (body) config.body = JSON.stringify(body);
   try {
-    const res = await fetch(endpoint, config);
+    const res = await fetch(url, config);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Помилка сервера" }));
       throw new Error(err.detail || `Помилка ${res.status}`);
@@ -319,6 +323,14 @@ async function loadStatus() {
     document.getElementById("calibTankInput").placeholder = data.tank_capacity;
     document.getElementById("calibIntervalInput").placeholder = data.maintenance_interval_hours;
 
+    if (document.getElementById("calibFuelTypeInput") && document.activeElement !== document.getElementById("calibFuelTypeInput")) {
+      document.getElementById("calibFuelTypeInput").value = data.fuel_type || "ДП";
+    }
+    document.getElementById("calibFuelPriceInput").placeholder = data.fuel_price ? data.fuel_price.toFixed(2) : "";
+    if (document.getElementById("calibAutoPriceInput")) {
+      document.getElementById("calibAutoPriceInput").checked = data.auto_update_price;
+    }
+
     if (data.current_user) {
       const myInput = document.getElementById("myCustomNameInput");
       if (myInput && document.activeElement !== myInput) {
@@ -422,7 +434,28 @@ function openRefuelModal() {
   document.getElementById("refuelAmountInput").value = "";
   document.getElementById("refuelCostInput").value = "";
   document.getElementById("refuelNotesInput").value = "";
+  document.getElementById("refuelReceiptInput").value = "";
+  document.getElementById("refuelDeliveredByInput").value = "";
+  
+  const hintEl = document.getElementById("refuelPriceHint");
+  if (hintEl) {
+    if (currentStatus && currentStatus.fuel_price > 0) {
+      hintEl.innerText = `По ${currentStatus.fuel_price.toFixed(2)} ₴/${currentStatus.fuel_type || 'л'}`;
+    } else {
+      hintEl.innerText = "";
+    }
+  }
   openModal("refuelModal");
+}
+
+function calculateRefuelCost() {
+  const amount = parseFloat(document.getElementById("refuelAmountInput").value.replace(',', '.'));
+  const costInput = document.getElementById("refuelCostInput");
+  if (!isNaN(amount) && amount > 0 && currentStatus && currentStatus.fuel_price > 0) {
+    costInput.value = Math.round(amount * currentStatus.fuel_price);
+  } else {
+    costInput.value = "";
+  }
 }
 
 function openMaintModal() {
@@ -813,6 +846,23 @@ async function saveCalibInterval() {
   await saveAdminSetting({ maintenance_interval: val });
 }
 
+async function saveCalibFuelType() {
+  const val = document.getElementById("calibFuelTypeInput").value;
+  if (!val) return;
+  await saveAdminSetting({ fuel_type: val });
+}
+
+async function saveCalibFuelPrice() {
+  const val = parseFloat(document.getElementById("calibFuelPriceInput").value);
+  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  await saveAdminSetting({ fuel_price: val });
+}
+
+async function saveCalibAutoPrice() {
+  const val = document.getElementById("calibAutoPriceInput").checked;
+  await saveAdminSetting({ auto_update_price: val });
+}
+
 async function saveAdminSetting(payload) {
   haptic("medium");
   try {
@@ -1043,3 +1093,99 @@ setInterval(() => {
     loadStatus();
   }
 }, 15000);
+
+
+// --- MULTI-GENERATOR SUPPORT ---
+
+async function loadGeneratorsList() {
+  try {
+    const data = await apiCall('/api/generators');
+    const select = document.getElementById('globalGenSelect');
+    if (!select) return;
+    
+    // Remember current selection
+    const currentVal = window.currentGenId;
+    
+    select.innerHTML = '';
+    data.forEach(gen => {
+      const opt = document.createElement('option');
+      opt.value = gen.id;
+      opt.text = gen.name;
+      if (gen.is_running) opt.text += ' (Працює)';
+      select.appendChild(opt);
+    });
+    
+    // Restore or select first
+    if (data.find(g => g.id == currentVal)) {
+      select.value = currentVal;
+    } else if (data.length > 0) {
+      select.value = data[0].id;
+      window.currentGenId = data[0].id;
+      localStorage.setItem('currentGenId', window.currentGenId);
+    }
+  } catch (e) {
+    console.error('Failed to load generators list', e);
+  }
+}
+
+async function switchGenerator() {
+  const select = document.getElementById('globalGenSelect');
+  if (!select) return;
+  const newId = parseInt(select.value);
+  if (newId && newId !== window.currentGenId) {
+    window.currentGenId = newId;
+    localStorage.setItem('currentGenId', newId);
+    showToast('Перемикання об\'єкту...');
+    await loadStatus(); // Reload everything for new gen
+  }
+}
+
+function openWizardModal() {
+  document.getElementById('wizName').value = '';
+  document.getElementById('wizTank').value = '';
+  document.getElementById('wizRate').value = '';
+  document.getElementById('wizHours').value = '';
+  document.getElementById('wizFuel').value = '';
+  openModal('wizardModal');
+}
+
+async function submitWizard() {
+  const name = document.getElementById('wizName').value.trim();
+  const fType = document.getElementById('wizFuelType').value;
+  const tank = parseFloat(document.getElementById('wizTank').value.replace(',', '.')) || 150.0;
+  const rate = parseFloat(document.getElementById('wizRate').value.replace(',', '.')) || 4.5;
+  const hours = parseFloat(document.getElementById('wizHours').value.replace(',', '.')) || 0.0;
+  const fuel = parseFloat(document.getElementById('wizFuel').value.replace(',', '.')) || 0.0;
+  const maint = parseFloat(document.getElementById('wizMaint').value.replace(',', '.')) || 250.0;
+
+  if (!name) return alert("Введіть назву!");
+  
+  const body = {
+    name: name,
+    fuel_type: fType,
+    tank_capacity: tank,
+    fuel_rate: rate,
+    total_hours: hours,
+    current_fuel: fuel,
+    maintenance_interval: maint
+  };
+
+  try {
+    const res = await apiCall('/api/generators', 'POST', body);
+    closeModal('wizardModal');
+    haptic('success');
+    showToast('Об\'єкт успішно створено!');
+    window.currentGenId = res.id;
+    localStorage.setItem('currentGenId', res.id);
+    await loadGeneratorsList();
+    await loadStatus();
+  } catch (e) {
+    haptic('error');
+    alert(e.message);
+  }
+}
+
+// Call loadGeneratorsList on start
+document.addEventListener("DOMContentLoaded", () => {
+  loadGeneratorsList();
+});
