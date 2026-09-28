@@ -397,15 +397,43 @@
         <div class="form-group">
           <label class="form-label">Об'єм бака генератора (л):</label>
           <div style="display: flex; gap: 8px;">
-            <input type="number" step="1" id="calibTankInput" class="form-input" placeholder="напр. 150">
+            <input type="text" inputmode="decimal" id="calibTankInput" class="form-input" placeholder="напр. 150">
             <button class="btn-secondary" style="width: 100px;" onclick="saveCalibTank()">Зберегти</button>
           </div>
         </div>
 
         <div class="form-group">
+          <label class="form-label">Тип пального:</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="calibFuelTypeInput" class="form-input" style="appearance: auto;">
+              <option value="ДП">ДП (Дизель)</option>
+              <option value="А-95">Бензин А-95</option>
+              <option value="А-92">Бензин А-92</option>
+            </select>
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibFuelType()">Зберегти</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Поточна ціна пального (₴/л):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" inputmode="decimal" id="calibFuelPriceInput" class="form-input" placeholder="напр. 52.40">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibFuelPrice()">Зберегти</button>
+          </div>
+        </div>
+        
+        <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
+          <label class="form-label" style="margin-bottom: 0;">Авто-оновлення ціни з Minfin (Дніпро):</label>
+          <label class="switch">
+            <input type="checkbox" id="calibAutoPriceInput" onchange="saveCalibAutoPrice()">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Інтервал між плановими ТО (мч):</label>
           <div style="display: flex; gap: 8px;">
-            <input type="number" step="10" id="calibIntervalInput" class="form-input" placeholder="напр. 250">
+            <input type="text" inputmode="decimal" id="calibIntervalInput" class="form-input" placeholder="напр. 250">
             <button class="btn-secondary" style="width: 100px;" onclick="saveCalibInterval()">Зберегти</button>
           </div>
         </div>
@@ -521,7 +549,7 @@
 
       <div class="form-group">
         <label class="form-label">Об'єм пального (літрів):</label>
-        <input type="number" step="0.5" id="refuelAmountInput" class="form-input" placeholder="наприклад: 50">
+        <input type="text" inputmode="decimal" id="refuelAmountInput" class="form-input" placeholder="наприклад: 50" oninput="calculateRefuelCost()">
       </div>
 
       <div class="form-group">
@@ -535,8 +563,11 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Вартість заправки (₴, необов'язково):</label>
-        <input type="number" step="1" id="refuelCostInput" class="form-input" placeholder="наприклад: 2800">
+        <label class="form-label" style="display: flex; justify-content: space-between;">
+          <span>Вартість заправки (₴):</span>
+          <span id="refuelPriceHint" style="color: var(--hint-color); font-weight: normal; font-size: 12px;"></span>
+        </label>
+        <input type="text" inputmode="decimal" id="refuelCostInput" class="form-input" placeholder="наприклад: 2800">
       </div>
 
       <div class="form-group">

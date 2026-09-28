@@ -599,7 +599,9 @@ class AdminSettingsRequest(BaseModel):
     fuel_rate: Optional[float] = None
     tank_capacity: Optional[float] = None
     maintenance_interval: Optional[float] = None
-
+    fuel_type: Optional[str] = None
+    fuel_price: Optional[float] = None
+    auto_update_price: Optional[bool] = None
 
 @app.post("/api/admin/settings")
 async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -616,7 +618,10 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
             current_fuel=req.current_fuel,
             fuel_rate=req.fuel_rate,
             tank_capacity=req.tank_capacity,
-            maintenance_interval=req.maintenance_interval
+            maintenance_interval=req.maintenance_interval,
+            fuel_type=req.fuel_type,
+            fuel_price=req.fuel_price,
+            auto_update_price=req.auto_update_price
         )
 
     return {"status": "ok", "message": "Параметри оновлено"}

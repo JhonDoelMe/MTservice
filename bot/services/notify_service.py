@@ -1,21 +1,46 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+import re
+import httpx
 from aiogram import Bot
 from sqlalchemy import select
 
 from bot.config import settings
 from bot.database.db import get_session_maker
-from bot.database.models import User
+from bot.database.models import User, GeneratorState
 from bot.services.generator_service import GeneratorService, format_duration, get_local_tz
 
 logger = logging.getLogger(__name__)
 
+async def fetch_minfin_fuel_price(fuel_type: str) -> float:
+    """Парсить ціну палива з Мінфіну (Дніпропетровська область)."""
+    try:
+        url = "https://index.minfin.com.ua/markets/fuel/reg/dnepropetrovskaya/"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            html = resp.text
+            
+            # fuel_type: "ДП", "А-95", "А-92", "Газ"
+            search_type = fuel_type.replace("Бензин ", "")
+            # Знаходимо рядок з цим паливом
+            # На Мінфіні зазвичай `<td>ДП</td><td class="num">52,40</td>` або схоже
+            match = re.search(rf'<td>{re.escape(search_type)}</td>.*?<td[^>]*>([\d,\.]+)</td>', html, re.IGNORECASE | re.DOTALL)
+            if match:
+                price_str = match.group(1).replace(',', '.')
+                return float(price_str)
+            else:
+                logger.warning(f"Minfin scraper: {search_type} not found in HTML.")
+    except Exception as e:
+        logger.error(f"Minfin scraper error: {e}")
+    return 0.0
 
 async def background_monitoring_loop(bot: Bot):
     """Періодичний фоновий моніторинг тривалості роботи, залишку пального, регламенту ТО та робочого графіка."""
     logger.info("Запуск фонового циклу моніторингу генератора...")
     last_30m_check = 0
+    last_daily_price_check = None
     notified_10m_date = None
     notified_end_date = None
 
@@ -26,6 +51,20 @@ async def background_monitoring_loop(bot: Bot):
             session_maker = get_session_maker()
             async with session_maker() as session:
                 dash = await GeneratorService.get_dashboard_data(session)
+                
+                local_now = datetime.now(get_local_tz())
+                today_str = local_now.strftime("%Y-%m-%d")
+                
+                # --- 0. ПАРСИНГ МІНФІНУ (Раз на добу вранці ~08:00) ---
+                if dash.get("auto_update_price") and local_now.hour >= 8 and last_daily_price_check != today_str:
+                    last_daily_price_check = today_str
+                    new_price = await fetch_minfin_fuel_price(dash.get("fuel_type", "ДП"))
+                    if new_price > 0 and new_price != dash.get("fuel_price"):
+                        gen = await session.get(GeneratorState, 1)
+                        if gen:
+                            gen.fuel_price = new_price
+                            await session.commit()
+                            logger.info(f"💰 Ціну палива автоматично оновлено: {new_price} ₴/л")
 
                 users_res = await session.execute(
                     select(User).where(User.role.in_(["admin", "operator"]))
@@ -33,9 +72,6 @@ async def background_monitoring_loop(bot: Bot):
                 notify_users = users_res.scalars().all()
                 if not notify_users:
                     continue
-
-                local_now = datetime.now(get_local_tz())
-                today_str = local_now.strftime("%Y-%m-%d")
 
                 # --- 1. ПЕРЕВІРКА ГРАФІКА РОБОТИ ТА НАГАДУВАННЯ ЗА 10 ХВ ДО ЗУПИНКИ ---
                 if settings.WORK_HOURS_ENABLED and dash["is_running"]:

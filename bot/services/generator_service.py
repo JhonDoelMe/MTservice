@@ -181,6 +181,9 @@ class GeneratorService:
             },
             "currency": settings.CURRENCY,
             "timezone": settings.TIMEZONE,
+            "fuel_type": gen.fuel_type,
+            "fuel_price": round(gen.fuel_price, 2) if gen.fuel_price else 0.0,
+            "auto_update_price": gen.auto_update_price,
         }
 
         ttl = 2 if gen.is_running else 10
@@ -494,6 +497,9 @@ class GeneratorService:
         tank_capacity: Optional[float] = None,
         maintenance_interval: Optional[float] = None,
         last_maint_hours: Optional[float] = None,
+        fuel_type: Optional[str] = None,
+        fuel_price: Optional[float] = None,
+        auto_update_price: Optional[bool] = None,
     ) -> GeneratorState:
         gen = await GeneratorService.get_state(session)
         changes = []
@@ -504,6 +510,9 @@ class GeneratorService:
             "tank_capacity": gen.tank_capacity,
             "maintenance_interval_hours": gen.maintenance_interval_hours,
             "last_maintenance_hours": gen.last_maintenance_hours,
+            "fuel_type": gen.fuel_type,
+            "fuel_price": gen.fuel_price,
+            "auto_update_price": gen.auto_update_price,
         }
 
         if total_hours is not None and total_hours != gen.total_hours:
@@ -524,6 +533,15 @@ class GeneratorService:
         if last_maint_hours is not None and last_maint_hours != gen.last_maintenance_hours:
             changes.append(f"Останнє ТО (мч): {gen.last_maintenance_hours} -> {last_maint_hours}")
             gen.last_maintenance_hours = last_maint_hours
+        if fuel_type is not None and fuel_type != gen.fuel_type:
+            changes.append(f"Тип палива: {gen.fuel_type} -> {fuel_type}")
+            gen.fuel_type = fuel_type
+        if fuel_price is not None and fuel_price != gen.fuel_price:
+            changes.append(f"Ціна: {gen.fuel_price} -> {fuel_price}")
+            gen.fuel_price = fuel_price
+        if auto_update_price is not None and auto_update_price != gen.auto_update_price:
+            changes.append(f"Авто-ціна: {gen.auto_update_price} -> {auto_update_price}")
+            gen.auto_update_price = auto_update_price
 
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         

@@ -31,6 +31,9 @@ class GeneratorState(Base):
     current_fuel: Mapped[float] = mapped_column(Float, default=100.0)
     fuel_rate: Mapped[float] = mapped_column(Float, default=4.5)  # л / год
     tank_capacity: Mapped[float] = mapped_column(Float, default=150.0)  # л
+    fuel_type: Mapped[str] = mapped_column(String(50), default="ДП")
+    fuel_price: Mapped[float] = mapped_column(Float, default=52.40)
+    auto_update_price: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Головне ТО (Заміна моторної оливи)
     maintenance_interval_hours: Mapped[float] = mapped_column(Float, default=250.0)

@@ -319,6 +319,14 @@ async function loadStatus() {
     document.getElementById("calibTankInput").placeholder = data.tank_capacity;
     document.getElementById("calibIntervalInput").placeholder = data.maintenance_interval_hours;
 
+    if (document.getElementById("calibFuelTypeInput") && document.activeElement !== document.getElementById("calibFuelTypeInput")) {
+      document.getElementById("calibFuelTypeInput").value = data.fuel_type || "ДП";
+    }
+    document.getElementById("calibFuelPriceInput").placeholder = data.fuel_price ? data.fuel_price.toFixed(2) : "";
+    if (document.getElementById("calibAutoPriceInput")) {
+      document.getElementById("calibAutoPriceInput").checked = data.auto_update_price;
+    }
+
     if (data.current_user) {
       const myInput = document.getElementById("myCustomNameInput");
       if (myInput && document.activeElement !== myInput) {
@@ -422,7 +430,28 @@ function openRefuelModal() {
   document.getElementById("refuelAmountInput").value = "";
   document.getElementById("refuelCostInput").value = "";
   document.getElementById("refuelNotesInput").value = "";
+  document.getElementById("refuelReceiptInput").value = "";
+  document.getElementById("refuelDeliveredByInput").value = "";
+  
+  const hintEl = document.getElementById("refuelPriceHint");
+  if (hintEl) {
+    if (currentStatus && currentStatus.fuel_price > 0) {
+      hintEl.innerText = `По ${currentStatus.fuel_price.toFixed(2)} ₴/${currentStatus.fuel_type || 'л'}`;
+    } else {
+      hintEl.innerText = "";
+    }
+  }
   openModal("refuelModal");
+}
+
+function calculateRefuelCost() {
+  const amount = parseFloat(document.getElementById("refuelAmountInput").value.replace(',', '.'));
+  const costInput = document.getElementById("refuelCostInput");
+  if (!isNaN(amount) && amount > 0 && currentStatus && currentStatus.fuel_price > 0) {
+    costInput.value = Math.round(amount * currentStatus.fuel_price);
+  } else {
+    costInput.value = "";
+  }
 }
 
 function openMaintModal() {
@@ -811,6 +840,23 @@ async function saveCalibInterval() {
   const val = parseFloat(document.getElementById("calibIntervalInput").value);
   if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
   await saveAdminSetting({ maintenance_interval: val });
+}
+
+async function saveCalibFuelType() {
+  const val = document.getElementById("calibFuelTypeInput").value;
+  if (!val) return;
+  await saveAdminSetting({ fuel_type: val });
+}
+
+async function saveCalibFuelPrice() {
+  const val = parseFloat(document.getElementById("calibFuelPriceInput").value);
+  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  await saveAdminSetting({ fuel_price: val });
+}
+
+async function saveCalibAutoPrice() {
+  const val = document.getElementById("calibAutoPriceInput").checked;
+  await saveAdminSetting({ auto_update_price: val });
 }
 
 async function saveAdminSetting(payload) {
