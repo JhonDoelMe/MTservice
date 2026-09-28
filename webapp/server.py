@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from bot.config import settings
 from bot.database.db import get_session_maker
-from bot.database.models import User, RunLog, FuelLog, MaintenanceLog, AuditResetLog
+from bot.database.models import User, RunLog, FuelLog, MaintenanceLog, AuditResetLog, GeneratorState
 from bot.services.generator_service import (
     GeneratorService,
     format_dt,
