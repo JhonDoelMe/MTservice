@@ -80,6 +80,14 @@ function startLiveStopwatch(startTimeIso) {
     const str = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     const timerEl = document.getElementById("liveTimer");
     if (timerEl) timerEl.innerText = str;
+
+    // Live update fuel consumed tile during run
+    if (currentStatus?.fuel_rate) {
+      const hoursElapsed = totalSecs / 3600;
+      const liveSessionFuel = (hoursElapsed * currentStatus.fuel_rate).toFixed(2);
+      const fuelConsVal = document.getElementById("fuelConsumptionVal");
+      if (fuelConsVal) fuelConsVal.innerText = `${liveSessionFuel} л`;
+    }
   }
   tick();
   liveTimerInterval = setInterval(tick, 1000);
@@ -134,8 +142,10 @@ async function loadStatus() {
     document.getElementById("fuelHoursRemaining").innerText = `~${data.remaining_runtime_hours} год`;
     document.getElementById("fuelRateText").innerText = `${data.fuel_rate} л/год`;
 
-    // Metrics
+    // Metrics - 1. Total Hours
     document.getElementById("totalHoursVal").innerText = `${data.total_hours.toFixed(2)} мч`;
+
+    // Metrics - 2. Maintenance
     const maintEl = document.getElementById("hoursToMaintVal");
     const maintBadge = document.getElementById("maintStatusBadge");
     maintEl.innerText = `${data.hours_to_maint.toFixed(1)} мч`;
@@ -149,6 +159,34 @@ async function loadStatus() {
     } else {
       maintBadge.innerText = "В нормі";
       maintBadge.className = "metric-sub badge-normal";
+    }
+
+    // Metrics - 3. Fuel Consumption
+    const fuelConsVal = document.getElementById("fuelConsumptionVal");
+    const fuelConsSub = document.getElementById("fuelConsumptionSub");
+    if (fuelConsVal && fuelConsSub) {
+      if (data.is_running) {
+        fuelConsVal.innerText = `${(data.session_fuel_burned || 0).toFixed(2)} л`;
+        fuelConsSub.innerText = `за сесію (сьогодні: ${(data.today_fuel_burned || 0).toFixed(1)} л)`;
+      } else {
+        fuelConsVal.innerText = `${(data.today_fuel_burned || 0).toFixed(1)} л`;
+        fuelConsSub.innerText = `витрачено за сьогодні`;
+      }
+    }
+
+    // Metrics - 4. Last Refuel
+    const lastRefuelVal = document.getElementById("lastRefuelVal");
+    const lastRefuelSub = document.getElementById("lastRefuelSub");
+    if (lastRefuelVal && lastRefuelSub) {
+      if (data.last_refuel) {
+        lastRefuelVal.innerText = `+${data.last_refuel.amount_liters} л`;
+        const costText = data.last_refuel.cost ? ` • ${data.last_refuel.cost} ₴` : '';
+        const noteText = data.last_refuel.notes ? ` (${data.last_refuel.notes})` : '';
+        lastRefuelSub.innerText = `${data.last_refuel.timestamp_formatted}${costText}${noteText}`;
+      } else {
+        lastRefuelVal.innerText = "—";
+        lastRefuelSub.innerText = "Немає записів";
+      }
     }
 
     // Tab 2 Fuel sync
@@ -209,9 +247,44 @@ function closeModal(id) {
   document.getElementById(id).classList.remove("active");
 }
 
-function openStartModal() {
-  document.getElementById("startCustomTimeInput").value = "";
-  openModal("startModal");
+// Immediate Start Generator (no modal, starts stopwatch at 00:00:00)
+async function startGeneratorImmediately() {
+  haptic("medium");
+
+  const runningView = document.getElementById("runningView");
+  const stoppedView = document.getElementById("stoppedView");
+  const badge = document.getElementById("headerStatusBadge");
+  const statusText = document.getElementById("headerStatusText");
+  const timerEl = document.getElementById("liveTimer");
+
+  // Optimistic UI switch: immediately show running and timer 00:00:00
+  if (stoppedView) stoppedView.style.display = "none";
+  if (runningView) runningView.style.display = "block";
+  if (badge) badge.className = "status-badge running";
+  if (statusText) statusText.innerText = "В РОБОТІ";
+  if (timerEl) timerEl.innerText = "00:00:00";
+
+  // Start live timer from now (00:00:00)
+  startLiveStopwatch(new Date().toISOString());
+
+  try {
+    const res = await apiCall("/api/generator/start", "POST", { custom_time: "зараз" });
+    haptic("success");
+    if (res?.data?.start_time) {
+      startLiveStopwatch(res.data.start_time);
+    }
+    await loadStatus();
+  } catch (err) {
+    haptic("error");
+    // Revert optimistic UI on error
+    stopLiveStopwatch();
+    if (stoppedView) stoppedView.style.display = "block";
+    if (runningView) runningView.style.display = "none";
+    if (badge) badge.className = "status-badge stopped";
+    if (statusText) statusText.innerText = "ЗУПИНЕНО";
+    alert(err.message);
+    await loadStatus();
+  }
 }
 
 function openStopModal() {
@@ -234,30 +307,9 @@ function openMaintModal() {
   openModal("maintModal");
 }
 
-function setStartTimeOffset(mins) {
-  haptic("light");
-  document.getElementById("startCustomTimeInput").value = mins === 0 ? "Зараз" : `-${mins} хв`;
-}
-
 function setStopTimeOffset(mins) {
   haptic("light");
   document.getElementById("stopCustomTimeInput").value = mins === 0 ? "Зараз" : `-${mins} хв`;
-}
-
-// Action Submissions
-async function submitStartGenerator() {
-  haptic("medium");
-  const timeVal = document.getElementById("startCustomTimeInput").value.trim();
-  closeModal("startModal");
-
-  try {
-    const res = await apiCall("/api/generator/start", "POST", { custom_time: timeVal });
-    haptic("success");
-    await loadStatus();
-  } catch (err) {
-    haptic("error");
-    alert(err.message);
-  }
 }
 
 async function submitStopGenerator() {

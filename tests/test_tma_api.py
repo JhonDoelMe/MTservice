@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 def run_tests():
     print("1. Initializing DB and Cache...")
     asyncio.run(init_db())
+    asyncio.run(cache.clear_pattern("generator:*"))
     print("DB & Cache initialized.")
 
     client = TestClient(app)
@@ -59,8 +60,10 @@ def run_tests():
     print("\n5. Testing GET /api/status while running...")
     res = client.get("/api/status")
     data = res.json()
-    print(f"Status is_running: {data['is_running']}, current_run_hours: {data['current_run_hours']}")
+    print(f"Status is_running: {data['is_running']}, current_run_hours: {data['current_run_hours']}, session_fuel: {data['session_fuel_burned']}")
     assert data["is_running"] is True
+    assert "session_fuel_burned" in data
+    assert "today_fuel_burned" in data
 
     print("\n6. Testing POST /api/fuel/add...")
     res = client.post("/api/fuel/add", json={"amount_liters": 50.0, "cost": 2750.0, "notes": "АЗС ОККО"})
@@ -68,6 +71,14 @@ def run_tests():
     data = res.json()
     print("Refuel response:", data["message"])
     assert data["status"] == "ok"
+
+    # Check that last_refuel is populated in status
+    res = client.get("/api/status")
+    data = res.json()
+    print("Last refuel in status:", data["last_refuel"])
+    assert data["last_refuel"] is not None
+    assert data["last_refuel"]["amount_liters"] == 50.0
+    assert data["last_refuel"]["cost"] == 2750.0
 
     print("\n7. Testing POST /api/generator/stop...")
     res = client.post("/api/generator/stop", json={"notes": "Мережа стабільна"})

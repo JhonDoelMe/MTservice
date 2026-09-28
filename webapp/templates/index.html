@@ -51,7 +51,7 @@
           <div style="text-align: center; padding: 10px 0; color: var(--hint-color); font-size: 14px;">
             Генератор знаходиться в резерві
           </div>
-          <button class="main-action-btn start-btn" onclick="openStartModal()">
+          <button class="main-action-btn start-btn" id="startBtn" onclick="startGeneratorImmediately()">
             <span>▶️</span> ЗАПУСТИТИ ГЕНЕРАТОР
           </button>
         </div>
@@ -87,7 +87,7 @@
         </div>
       </div>
 
-      <!-- Quick Metrics Grid -->
+      <!-- Quick Metrics Grid (4 tiles) -->
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">⏱ Напрацювання</div>
@@ -98,6 +98,16 @@
           <div class="metric-label">🔧 До планового ТО</div>
           <div class="metric-value" id="hoursToMaintVal">0.0 мч</div>
           <div class="metric-sub" id="maintStatusBadge">В нормі</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">📉 Витрати палива</div>
+          <div class="metric-value" id="fuelConsumptionVal">0.0 л</div>
+          <div class="metric-sub" id="fuelConsumptionSub" style="color: var(--hint-color);">За сесію / сьогодні</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">⛽ Останній прихід</div>
+          <div class="metric-value" id="lastRefuelVal">—</div>
+          <div class="metric-sub" id="lastRefuelSub" style="color: var(--hint-color);">Немає записів</div>
         </div>
       </div>
 
@@ -300,30 +310,6 @@
     </button>
   </nav>
 
-  <!-- MODAL: ЗАПУСК ГЕНЕРАТОРА -->
-  <div class="modal-overlay" id="startModal">
-    <div class="modal-sheet">
-      <div class="modal-header">
-        <div class="modal-title">▶️ Запуск генератора</div>
-        <button class="close-btn" onclick="closeModal('startModal')">&times;</button>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Час запуску:</label>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
-          <button class="btn-secondary" onclick="setStartTimeOffset(0)">Зараз</button>
-          <button class="btn-secondary" onclick="setStartTimeOffset(15)">15 хв тому</button>
-          <button class="btn-secondary" onclick="setStartTimeOffset(30)">30 хв тому</button>
-          <button class="btn-secondary" onclick="setStartTimeOffset(60)">1 год тому</button>
-        </div>
-        <input type="text" id="startCustomTimeInput" class="form-input" placeholder="або введіть час: напр. 10:15 або -20">
-      </div>
-
-      <button class="btn-primary" style="background: var(--accent-green);" onclick="submitStartGenerator()">
-        Підтвердити запуск
-      </button>
-    </div>
-  </div>
 
   <!-- MODAL: ЗУПИНКА ГЕНЕРАТОРА -->
   <div class="modal-overlay" id="stopModal">

@@ -81,11 +81,12 @@ class GeneratorService:
         current_fuel_estimate = gen.current_fuel
         total_hours_estimate = gen.total_hours
 
+        session_fuel_burned = 0.0
         if gen.is_running and gen.current_start_time:
             delta = now_utc - gen.current_start_time
             current_run_hours = max(0.0, delta.total_seconds() / 3600.0)
-            fuel_used_now = current_run_hours * gen.fuel_rate
-            current_fuel_estimate = max(0.0, gen.current_fuel - fuel_used_now)
+            session_fuel_burned = round(current_run_hours * gen.fuel_rate, 2)
+            current_fuel_estimate = max(0.0, gen.current_fuel - session_fuel_burned)
             total_hours_estimate = gen.total_hours + current_run_hours
 
         hours_to_maint = (gen.last_maintenance_hours + gen.maintenance_interval_hours) - total_hours_estimate
@@ -97,6 +98,34 @@ class GeneratorService:
         remaining_runtime_hours = 0.0
         if gen.fuel_rate > 0:
             remaining_runtime_hours = current_fuel_estimate / gen.fuel_rate
+
+        # Get today's total fuel burned
+        local_tz = get_local_tz()
+        start_of_day_local = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_day_utc = start_of_day_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+        today_runs_res = await session.execute(
+            select(RunLog).where(RunLog.stop_time >= start_of_day_utc)
+        )
+        today_runs = today_runs_res.scalars().all()
+        today_runs_fuel = sum(r.fuel_consumed for r in today_runs)
+        today_fuel_burned = round(today_runs_fuel + session_fuel_burned, 2)
+
+        # Get last refuel
+        last_fuel_res = await session.execute(
+            select(FuelLog).order_by(FuelLog.id.desc()).limit(1)
+        )
+        last_fuel = last_fuel_res.scalar_one_or_none()
+        last_refuel_data = None
+        if last_fuel:
+            last_refuel_data = {
+                "amount_liters": round(last_fuel.amount_liters, 1),
+                "cost": last_fuel.cost,
+                "timestamp_formatted": format_dt(last_fuel.timestamp),
+                "user_name": last_fuel.user_name,
+                "notes": last_fuel.notes,
+                "fuel_after": round(last_fuel.fuel_after, 1),
+            }
 
         data = {
             "name": gen.name,
@@ -113,6 +142,9 @@ class GeneratorService:
             "tank_capacity": round(gen.tank_capacity, 0),
             "fuel_pct": round(fuel_pct, 1),
             "remaining_runtime_hours": round(remaining_runtime_hours, 1),
+            "session_fuel_burned": session_fuel_burned,
+            "today_fuel_burned": today_fuel_burned,
+            "last_refuel": last_refuel_data,
             "last_maintenance_hours": round(gen.last_maintenance_hours, 1),
             "last_maintenance_date": gen.last_maintenance_date.isoformat() if gen.last_maintenance_date else None,
             "last_maintenance_date_formatted": format_dt(gen.last_maintenance_date, include_time=False) if gen.last_maintenance_date else "—",
@@ -123,8 +155,8 @@ class GeneratorService:
             "timezone": settings.TIMEZONE,
         }
 
-        # Cache for 3 seconds during running, 15 seconds when stopped
-        ttl = 3 if gen.is_running else 15
+        # Cache for 2 seconds during running, 10 seconds when stopped
+        ttl = 2 if gen.is_running else 10
         await cache.set("generator:dashboard", data, ttl=ttl)
         return data
 
