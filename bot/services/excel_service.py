@@ -103,7 +103,7 @@ def auto_fit_columns(ws, min_width=12, max_width=50):
 class ExcelService:
 
     @staticmethod
-    async def generate_full_report(session: AsyncSession) -> BytesIO:
+    async def generate_full_report(session: AsyncSession, gen_id: int = 1) -> BytesIO:
         wb = Workbook()
 
         # -----------------------------------------------------------------
@@ -115,19 +115,19 @@ class ExcelService:
         ws_summary.views.sheetView[0].showGridLines = True
         ws_summary.freeze_panes = "A4"
 
-        gen_res = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
+        gen_res = await session.execute(select(GeneratorState).where(GeneratorState.id == gen_id))
         gen = gen_res.scalar_one_or_none()
 
-        runs_res = await session.execute(select(RunLog).order_by(RunLog.id.desc()))
+        runs_res = await session.execute(select(RunLog).where(RunLog.generator_id == gen_id).order_by(RunLog.id.desc()))
         runs = runs_res.scalars().all()
 
-        fuel_res = await session.execute(select(FuelLog).order_by(FuelLog.id.desc()))
+        fuel_res = await session.execute(select(FuelLog).where(FuelLog.generator_id == gen_id).order_by(FuelLog.id.desc()))
         refuels = fuel_res.scalars().all()
 
-        maint_res = await session.execute(select(MaintenanceLog).order_by(MaintenanceLog.id.desc()))
+        maint_res = await session.execute(select(MaintenanceLog).where(MaintenanceLog.generator_id == gen_id).order_by(MaintenanceLog.id.desc()))
         maints = maint_res.scalars().all()
 
-        audit_res = await session.execute(select(AuditResetLog).order_by(AuditResetLog.id.desc()))
+        audit_res = await session.execute(select(AuditResetLog).where(AuditResetLog.generator_id == gen_id).order_by(AuditResetLog.id.desc()))
         audits = audit_res.scalars().all()
 
         total_hours_ran = sum(r.duration_hours for r in runs)

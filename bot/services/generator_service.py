@@ -425,9 +425,8 @@ class GeneratorService:
         }
 
     @staticmethod
-    async def reset_counters(session: AsyncSession, user_id: int, user_name: str, reset_type: str, reason: str, gen_id: int = 1) -> Tuple[bool, str, Dict[str, Any]]:
-        if not reason or len(reason.strip()) < 3:
-            return False, "❌ Обов'язково вкажіть причину скидання лічильників!", {}
+    async def reset_counters(session: AsyncSession, user_id: int, user_name: str, reset_type: str, reason: str = "", gen_id: int = 1) -> Tuple[bool, str, Dict[str, Any]]:
+        clean_reason = reason.strip() if (reason and len(reason.strip()) >= 2) else "Скидання адміністратором"
 
         gen = await GeneratorService.get_state(session, gen_id)
         old_state = {
