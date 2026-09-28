@@ -23,6 +23,34 @@ from bot.services.generator_service import (
 )
 from bot.services.excel_service import ExcelService
 from bot.handlers.generator import parse_time_input
+from aiogram import Bot
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def notify_all_operators(message: str, exclude_user_id: Optional[int] = None):
+    if not settings.BOT_TOKEN or settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE" or settings.BOT_TOKEN.startswith("1234567890"):
+        return
+    bot = Bot(token=settings.BOT_TOKEN)
+    try:
+        session_maker = get_session_maker()
+        async with session_maker() as session:
+            users_res = await session.execute(
+                select(User).where(User.role.in_(["admin", "operator"]))
+            )
+            notify_users = users_res.scalars().all()
+        for u in notify_users:
+            if exclude_user_id and u.user_id == exclude_user_id:
+                continue
+            try:
+                await bot.send_message(chat_id=u.user_id, text=message, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Notify error: {e}")
+    finally:
+        await bot.session.close()
 
 app = FastAPI(title="MTservice Generator TMA Backend")
 
@@ -235,6 +263,13 @@ async def start_generator(req: StartRequest, current_user: Dict[str, Any] = Depe
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
+    asyncio.create_task(notify_all_operators(
+        f"⚡ <b>Генератор ЗАПУЩЕНО!</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"🕒 Час: {datetime.now(get_local_tz()).strftime('%H:%M')}",
+        exclude_user_id=current_user["user_id"]
+    ))
+
     return {"status": "ok", "message": msg, "data": data}
 
 
@@ -264,6 +299,14 @@ async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depend
 
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+
+    asyncio.create_task(notify_all_operators(
+        f"⏹ <b>Генератор ЗУПИНЕНО!</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"🕒 Час: {datetime.now(get_local_tz()).strftime('%H:%M')}\n"
+        f"⛽ Залишок: <code>{data.get('current_fuel', 0):.1f} л</code>",
+        exclude_user_id=current_user["user_id"]
+    ))
 
     return {"status": "ok", "message": msg, "data": data}
 
@@ -296,6 +339,14 @@ async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(ge
 
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+
+    asyncio.create_task(notify_all_operators(
+        f"⛽ <b>ЗАПРАВКА ГЕНЕРАТОРА!</b>\n"
+        f"➕ Додано: <b>{req.amount_liters:.1f} л</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"📈 Новий залишок: <code>{data.get('current_fuel', 0):.1f} л</code>",
+        exclude_user_id=current_user["user_id"]
+    ))
 
     return {"status": "ok", "message": msg, "data": data}
 
