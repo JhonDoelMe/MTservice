@@ -389,6 +389,43 @@ async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current
     }
 
 
+@app.get("/api/reports/chart-data")
+async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(get_current_user)):
+    local_tz = get_local_tz()
+    now_local = datetime.now(local_tz)
+    start_date_local = (now_local - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date_utc = start_date_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        runs_res = await session.execute(
+            select(RunLog).where(RunLog.stop_time >= start_date_utc)
+        )
+        runs = runs_res.scalars().all()
+
+    # Aggregate by local date string "DD.MM"
+    daily_data = {}
+    for i in range(days):
+        d = start_date_local + timedelta(days=i)
+        daily_data[d.strftime("%d.%m")] = {"hours": 0.0, "fuel": 0.0}
+
+    for r in runs:
+        local_stop = r.stop_time.replace(tzinfo=timezone.utc).astimezone(local_tz)
+        d_str = local_stop.strftime("%d.%m")
+        if d_str in daily_data:
+            daily_data[d_str]["hours"] += r.duration_hours
+            daily_data[d_str]["fuel"] += r.fuel_consumed
+
+    labels = list(daily_data.keys())
+    fuel_data = [round(daily_data[k]["fuel"], 1) for k in labels]
+    hours_data = [round(daily_data[k]["hours"], 1) for k in labels]
+
+    return {
+        "labels": labels,
+        "fuel": fuel_data,
+        "hours": hours_data
+    }
+
 @app.get("/api/reports/runs")
 async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()

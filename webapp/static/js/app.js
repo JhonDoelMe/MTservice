@@ -663,6 +663,73 @@ async function loadMaintHistory() {
   }
 }
 
+let fuelChartInstance = null;
+
+function renderFuelChart(data) {
+  const ctx = document.getElementById('fuelChart');
+  if (!ctx) return;
+  
+  if (fuelChartInstance) {
+    fuelChartInstance.destroy();
+  }
+  
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#0f172a';
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--card-border').trim() || 'rgba(0,0,0,0.05)';
+
+  fuelChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: [
+        {
+          label: 'Витрата (л)',
+          data: data.fuel,
+          backgroundColor: 'rgba(239, 68, 68, 0.8)',
+          borderRadius: 4,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Робота (год)',
+          data: data.hours,
+          backgroundColor: 'rgba(2, 132, 199, 0.8)',
+          borderRadius: 4,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      color: textColor,
+      plugins: {
+        legend: {
+          labels: { color: textColor, boxWidth: 12 }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: textColor }
+        },
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          grid: { color: gridColor },
+          ticks: { color: textColor }
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: textColor }
+        }
+      }
+    }
+  });
+}
+
 async function loadReports() {
   try {
     const summary = await apiCall("/api/reports/summary");
@@ -674,6 +741,14 @@ async function loadReports() {
 
     document.getElementById("repMonthHours").innerText = summary.month_duration_str;
     document.getElementById("repMonthFuel").innerText = `${summary.month_fuel} л`;
+
+    // Render Chart
+    try {
+      const chartData = await apiCall("/api/reports/chart-data?days=7");
+      renderFuelChart(chartData);
+    } catch (e) {
+      console.error("Chart error:", e);
+    }
 
     const runsList = await apiCall("/api/reports/runs");
     const container = document.getElementById("runsHistoryList");
