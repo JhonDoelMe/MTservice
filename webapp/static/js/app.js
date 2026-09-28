@@ -9,6 +9,31 @@ if (tg) {
   }
 }
 
+// Theme handling
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme'); // Auto (Telegram/System fallback)
+  }
+}
+
+function changeTheme() {
+  const theme = document.getElementById("themeSelect").value;
+  localStorage.setItem("appTheme", theme);
+  applyTheme(theme);
+}
+
+// Init theme on boot
+const savedTheme = localStorage.getItem("appTheme") || "auto";
+applyTheme(savedTheme);
+document.addEventListener("DOMContentLoaded", () => {
+  const sel = document.getElementById("themeSelect");
+  if (sel) sel.value = savedTheme;
+});
+
 // State
 let currentStatus = null;
 let liveTimerInterval = null;

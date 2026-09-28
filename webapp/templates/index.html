@@ -5,8 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Диспетчер генератора</title>
   <link rel="stylesheet" href="/static/css/style.css?v=1.4">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/img/icon-192.png">
+  <meta name="theme-color" content="#0F2942">
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js').catch(err => {
+          console.log('SW registration failed: ', err);
+        });
+      });
+    }
+  </script>
 </head>
 <body>
 
@@ -66,9 +78,17 @@
           <span style="font-size: 12px; color: var(--hint-color);" id="currentTimeKyiv">Київ</span>
         </div>
 
-        <div id="runningView" style="display: none;">
+        <div id="runningView" style="display: none; text-align: center;">
           <div class="live-label">Генератор працює вже:</div>
           <div class="live-timer" id="liveTimer">00:00:00</div>
+          
+          <div style="display: flex; justify-content: center; align-items: center; margin: 16px 0;">
+            <svg class="spinning-fan" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 54px; height: 54px; animation: spin 2s linear infinite;">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+
           <div class="live-label" id="runningOperatorInfo">Запустив: Оператор</div>
           <button class="main-action-btn stop-btn" onclick="openStopModal()">
             <span>⏹️</span> ЗУПИНИТИ ГЕНЕРАТОР
@@ -315,6 +335,23 @@
               💾 Зберегти
             </button>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🎨 Налаштування вигляду (PWA)</span>
+        </div>
+        <div style="font-size: 13px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
+          Зміна теми оформлення. Щоб встановити додаток, відкрийте його в браузері та оберіть "Додати на головний екран" (Add to Home Screen).
+        </div>
+        <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0;">
+          <label class="form-label" style="margin-bottom: 0; cursor: pointer;" for="themeSelect">Тема оформлення:</label>
+          <select id="themeSelect" class="form-input" style="width: 150px; padding: 6px 10px;" onchange="changeTheme()">
+            <option value="auto">Як у Telegram</option>
+            <option value="light">Світла</option>
+            <option value="dark">Темна</option>
+          </select>
         </div>
       </div>
 
