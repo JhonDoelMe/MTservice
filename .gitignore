@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment files
+.env
+
+# Database and data files
+data/*.db
+data/*.sqlite
+data/*.xlsx
+*.xlsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

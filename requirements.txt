@@ -1,0 +1,8 @@
+aiogram>=3.17.0
+sqlalchemy[asyncio]>=2.0.38
+greenlet>=3.1.1
+aiosqlite>=0.20.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.1
+openpyxl>=3.1.5
+tzdata>=2024.1
