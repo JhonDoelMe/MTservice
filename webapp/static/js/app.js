@@ -287,12 +287,23 @@ async function loadStatus() {
     const ffEl = document.getElementById("fuelFilterAgoText");
     if (ffEl) ffEl.innerText = `${(data.fuel_filter_hours_ago || 0).toFixed(1)} мч тому`;
 
-    // Tab 5 Settings sync placeholders
+    // Tab 5 Settings sync placeholders & profile
     document.getElementById("calibHoursInput").placeholder = data.base_total_hours;
     document.getElementById("calibFuelInput").placeholder = data.current_fuel;
     document.getElementById("calibRateInput").placeholder = data.fuel_rate;
     document.getElementById("calibTankInput").placeholder = data.tank_capacity;
     document.getElementById("calibIntervalInput").placeholder = data.maintenance_interval_hours;
+
+    if (data.current_user) {
+      const myInput = document.getElementById("myCustomNameInput");
+      if (myInput && document.activeElement !== myInput) {
+        myInput.value = data.current_user.custom_name || "";
+      }
+      const myRoleBadge = document.getElementById("myRoleBadge");
+      if (myRoleBadge) {
+        myRoleBadge.innerText = data.current_user.is_admin ? "👑 Адміністратор" : "👤 Оператор";
+      }
+    }
 
   } catch (e) {
     console.error("Помилка оновлення статусу:", e);
@@ -512,6 +523,8 @@ async function submitRefuel() {
     alert("Будь ласка, вкажіть коректний об'єм пального!");
     return;
   }
+  const delivered_by = document.getElementById("refuelDeliveredByInput")?.value?.trim() || null;
+  const receipt_number = document.getElementById("refuelReceiptInput")?.value?.trim() || null;
   const cost = parseFloat(document.getElementById("refuelCostInput").value) || null;
   const notes = document.getElementById("refuelNotesInput").value.trim() || null;
 
@@ -519,7 +532,13 @@ async function submitRefuel() {
   haptic("medium");
 
   try {
-    await apiCall("/api/fuel/add", "POST", { amount_liters: amount, cost, notes });
+    await apiCall("/api/fuel/add", "POST", {
+      amount_liters: amount,
+      delivered_by,
+      receipt_number,
+      cost,
+      notes
+    });
     haptic("success");
     await loadStatus();
     loadFuelHistory();
@@ -566,6 +585,11 @@ async function loadFuelHistory() {
         <div>
           <div class="list-item-title">+${item.amount_liters} л ${item.cost ? `(${item.cost} ₴)` : ''}</div>
           <div class="list-item-sub">${item.timestamp_formatted} • ${item.user_name || 'Оператор'}</div>
+          ${item.delivered_by || item.receipt_number ? `
+            <div style="font-size: 11px; color: var(--link-color); margin-top: 2px;">
+              🚚 ${item.delivered_by ? `Привіз: <b>${item.delivered_by}</b>` : ''} ${item.receipt_number ? `• Чек: <b>${item.receipt_number}</b>` : ''}
+            </div>
+          ` : ''}
           ${item.notes ? `<div style="font-size: 11px; color: var(--hint-color); margin-top: 2px;">💬 ${item.notes}</div>` : ''}
         </div>
         <div class="list-item-right">
@@ -787,6 +811,13 @@ function openEditUserNameModal(userId) {
   document.getElementById("editUserTgInfo").innerText = `${user.full_name || 'Без імені'} (@${user.username || 'немає'}) [ID: ${user.user_id}]`;
   document.getElementById("editCustomNameInput").value = user.custom_name || "";
   openModal("editUserNameModal");
+  setTimeout(() => {
+    const input = document.getElementById("editCustomNameInput");
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }, 100);
 }
 
 async function submitCustomUserName() {
@@ -802,12 +833,35 @@ async function submitCustomUserName() {
       custom_name: customName
     });
     haptic("success");
-    alert("Системне ім'я збережено!");
+    alert("✅ Системне ім'я збережено!");
+    await loadStatus();
     loadUsers();
-    loadStatus();
   } catch (e) {
     haptic("error");
     alert(e.message);
+  }
+}
+
+async function saveMyProfileName() {
+  const input = document.getElementById("myCustomNameInput");
+  const val = input ? input.value.trim() : "";
+  if (!currentStatus?.current_user?.user_id) {
+    alert("Помилка: користувач не ідентифікований");
+    return;
+  }
+  haptic("medium");
+  try {
+    await apiCall("/api/users/custom-name", "POST", {
+      user_id: currentStatus.current_user.user_id,
+      custom_name: val
+    });
+    haptic("success");
+    alert("✅ Ваше системне ім'я успішно оновлено!");
+    await loadStatus();
+    loadUsers();
+  } catch (e) {
+    haptic("error");
+    alert("❌ Помилка збереження: " + e.message);
   }
 }
 

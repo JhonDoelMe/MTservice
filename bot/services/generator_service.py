@@ -302,7 +302,9 @@ class GeneratorService:
         user_name: str,
         amount_liters: float,
         cost: Optional[float] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        receipt_number: Optional[str] = None,
+        delivered_by: Optional[str] = None
     ) -> Tuple[bool, str, Dict[str, Any]]:
         if amount_liters <= 0:
             return False, "❌ Об'єм заправки повинен бути більше 0!", {}
@@ -314,6 +316,9 @@ class GeneratorService:
         gen.current_fuel = fuel_after
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        clean_receipt = receipt_number.strip() if receipt_number and receipt_number.strip() else None
+        clean_delivered = delivered_by.strip() if delivered_by and delivered_by.strip() else None
+
         fuel_log = FuelLog(
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             amount_liters=amount_liters,
@@ -322,7 +327,9 @@ class GeneratorService:
             cost=cost,
             user_id=user_id,
             user_name=user_name,
-            notes=notes
+            notes=notes,
+            receipt_number=clean_receipt,
+            delivered_by=clean_delivered
         )
         session.add(fuel_log)
         await session.commit()
@@ -335,6 +342,8 @@ class GeneratorService:
             "fuel_after": fuel_after,
             "tank_capacity": gen.tank_capacity,
             "cost": cost,
+            "receipt_number": clean_receipt,
+            "delivered_by": clean_delivered,
             "notes": notes,
         }
 

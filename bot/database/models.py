@@ -81,6 +81,8 @@ class FuelLog(Base):
     user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     user_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    receipt_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Номер чеку / накладної
+    delivered_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Хто привіз / водій (прізвище)
 
 
 class MaintenanceLog(Base):

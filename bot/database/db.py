@@ -54,6 +54,19 @@ async def init_db():
         async with _active_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+    # Safe auto-migration for fuel_logs new columns
+    cur_eng = get_engine()
+    try:
+        from sqlalchemy import text
+        async with cur_eng.begin() as conn:
+            for col_name, col_type in [("receipt_number", "VARCHAR(100)"), ("delivered_by", "VARCHAR(255)")]:
+                try:
+                    await conn.execute(text(f"ALTER TABLE fuel_logs ADD COLUMN {col_name} {col_type}"))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     session_maker = get_session_maker()
     async with session_maker() as session:
         result = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
