@@ -170,9 +170,57 @@ def run_tests():
     assert status_wh["work_hours"]["start"] == "08:00"
     assert status_wh["work_hours"]["end"] == "20:00"
 
+    print("\n16. Testing Admin Recognition & Auto-promotion from Pending...")
+    import hmac
+    import hashlib
+    import json
+    import urllib.parse
+
+    test_bot_token = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+    settings.BOT_TOKEN = test_bot_token
+
+    def make_tg_init_data(user_dict: dict) -> str:
+        user_json = json.dumps(user_dict, separators=(",", ":"))
+        params = {
+            "auth_date": "1710000000",
+            "query_id": "AAHdF6IQAAAAAN0XohDhrPwt",
+            "user": user_json
+        }
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        secret_key = hmac.new(b"WebAppData", test_bot_token.encode("utf-8"), hashlib.sha256).digest()
+        hash_val = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        params["hash"] = hash_val
+        return urllib.parse.urlencode(params)
+
+    # 1. Non-admin user gets created as pending and blocked with 403
+    test_user_id = 888777666
+    user_header = {"X-Telegram-Init-Data": make_tg_init_data({"id": test_user_id, "first_name": "Новий", "username": "new_worker"})}
+    res_pending = client.get("/api/status", headers=user_header)
+    assert res_pending.status_code == 403
+    print("Pending user correctly blocked with 403:", res_pending.json()["detail"])
+
+    # 2. User ID is now added to ADMIN_IDS in .env (as int or str with quotes)
+    settings.ADMIN_IDS = [100000001, test_user_id]
+    res_promoted = client.get("/api/status", headers=user_header)
+    assert res_promoted.status_code == 200
+    user_data = res_promoted.json()["current_user"]
+    print("Admin successfully recognized & unblocked! Role:", user_data["role"], "is_admin:", user_data["is_admin"])
+    assert user_data["is_admin"] is True
+    assert user_data["role"] == "admin"
+
+    # 3. Test admin recognized by @username in ADMIN_IDS
+    settings.ADMIN_IDS = [100000001, "@super_chief"]
+    chief_header = {"X-Telegram-Init-Data": make_tg_init_data({"id": 444333222, "first_name": "Шеф", "username": "super_chief"})}
+    res_chief = client.get("/api/status", headers=chief_header)
+    assert res_chief.status_code == 200
+    chief_data = res_chief.json()["current_user"]
+    print("Admin by username successfully recognized! is_admin:", chief_data["is_admin"])
+    assert chief_data["is_admin"] is True
+
     print("\nALL TELEGRAM MINI APP TESTS PASSED PERFECTLY! 🚀")
 
 
 if __name__ == "__main__":
     run_tests()
+
 

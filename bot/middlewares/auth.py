@@ -26,7 +26,7 @@ class AuthMiddleware(BaseMiddleware):
 
         session_maker = get_session_maker()
         async with session_maker() as session:
-            is_env_admin = user_id in settings.ADMIN_IDS
+            is_env_admin = settings.is_admin(user_id, username)
 
             result = await session.execute(select(User).where(User.user_id == user_id))
             db_user = result.scalar_one_or_none()
@@ -54,7 +54,7 @@ class AuthMiddleware(BaseMiddleware):
                 if initial_role == "pending":
                     bot = data.get("bot")
                     if bot:
-                        admin_ids_to_notify = set(settings.ADMIN_IDS)
+                        admin_ids_to_notify = {x for x in settings.ADMIN_IDS if isinstance(x, int)}
                         for u in all_users:
                             if u.role == "admin":
                                 admin_ids_to_notify.add(u.user_id)
@@ -76,12 +76,16 @@ class AuthMiddleware(BaseMiddleware):
                             except Exception:
                                 pass
             else:
-                if is_env_admin and db_user.role != "admin":
+                if (is_env_admin or not has_any_admin) and db_user.role != "admin":
                     db_user.role = "admin"
                     await session.commit()
 
             data["user_role"] = db_user.role
-            data["is_admin"] = (db_user.role == "admin")
+            data["is_admin"] = (db_user.role == "admin" or is_env_admin)
+
+            # Адміністратор системи ніколи не блокується
+            if is_env_admin or db_user.role == "admin":
+                return await handler(event, data)
 
             if db_user.role == "blocked":
                 text = "⛔ <b>Доступ заборонено.</b>\nВаш акаунт заблоковано адміністратором системи."

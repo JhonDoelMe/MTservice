@@ -63,25 +63,68 @@ async def get_current_user(
     session_maker = get_session_maker()
     async with session_maker() as session:
         if tg_user and "id" in tg_user:
-            user_id = tg_user["id"]
-            user_name = f"{tg_user.get('first_name', '')} {tg_user.get('last_name', '')}".strip() or tg_user.get("username", "Оператор")
-            is_admin = user_id in settings.ADMIN_IDS
+            try:
+                user_id = int(tg_user["id"])
+            except (ValueError, TypeError):
+                user_id = tg_user["id"]
+
+            username = tg_user.get("username")
+            user_name = f"{tg_user.get('first_name', '')} {tg_user.get('last_name', '')}".strip() or username or "Оператор"
+
+            # 1. Перевірка, чи вказаний користувач в .env (ADMIN_IDS) за ID або username
+            is_env_admin = settings.is_admin(user_id, username)
+
+            # 2. Перевірка, чи є в системі взагалі хоч один адміністратор
+            total_users_res = await session.execute(select(User))
+            all_users = total_users_res.scalars().all()
+            has_any_admin = any(u.role == "admin" for u in all_users) or len(settings.ADMIN_IDS) > 0
 
             db_user = await session.get(User, user_id)
             if not db_user:
-                # Новий користувач отримує роль pending (якщо не прописаний в ADMIN_IDS)
-                role = "admin" if is_admin else "pending"
+                # Перший користувач або користувач з .env автоматично стає admin
+                initial_role = "admin" if (is_env_admin or not has_any_admin) else "pending"
                 db_user = User(
                     user_id=user_id,
-                    username=tg_user.get("username"),
+                    username=username,
                     full_name=user_name,
-                    role=role
+                    role=initial_role
                 )
                 session.add(db_user)
                 await session.commit()
                 await session.refresh(db_user)
+            else:
+                changed = False
+                # Оновлення username/імені з Telegram за потреби
+                if username and db_user.username != username:
+                    db_user.username = username
+                    changed = True
+                if user_name and db_user.full_name != user_name and not db_user.custom_name:
+                    db_user.full_name = user_name
+                    changed = True
 
-            # Перевірка схвалення адміністратором
+                # КРИТИЧНЕ ВИПРАВЛЕННЯ: якщо користувач прописаний в ADMIN_IDS (.env),
+                # або в системі взагалі немає адміна — він МИТТЄВО отримує статус admin
+                # навіть якщо раніше був збережений як pending або blocked!
+                if (is_env_admin or not has_any_admin) and db_user.role != "admin":
+                    db_user.role = "admin"
+                    changed = True
+
+                if changed:
+                    await session.commit()
+                    await session.refresh(db_user)
+
+            is_effective_admin = (is_env_admin or db_user.role == "admin")
+
+            # КРИТИЧНЕ ВИПРАВЛЕННЯ: Адміністратор НІКОЛИ не блокується екраном очікування!
+            if is_effective_admin:
+                return {
+                    "user_id": db_user.user_id,
+                    "user_name": db_user.display_name,
+                    "role": "admin",
+                    "is_admin": True
+                }
+
+            # Перевірка схвалення для звичайних користувачів
             if db_user.role == "pending":
                 raise HTTPException(
                     status_code=403,
@@ -97,11 +140,13 @@ async def get_current_user(
                 "user_id": db_user.user_id,
                 "user_name": db_user.display_name,
                 "role": db_user.role,
-                "is_admin": (db_user.role == "admin" or is_admin)
+                "is_admin": False
             }
 
         # Dev fallback для локального тестування у браузері без Telegram
-        default_admin_id = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else 100000001
+        int_admin_ids = [x for x in settings.ADMIN_IDS if isinstance(x, int)]
+        default_admin_id = int_admin_ids[0] if int_admin_ids else 100000001
+
         db_user = await session.get(User, default_admin_id)
         if not db_user:
             db_user = User(
@@ -113,11 +158,15 @@ async def get_current_user(
             session.add(db_user)
             await session.commit()
             await session.refresh(db_user)
+        elif db_user.role != "admin":
+            db_user.role = "admin"
+            await session.commit()
+            await session.refresh(db_user)
 
         return {
             "user_id": db_user.user_id,
             "user_name": db_user.display_name,
-            "role": db_user.role,
+            "role": "admin",
             "is_admin": True
         }
 

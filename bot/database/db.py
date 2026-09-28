@@ -73,18 +73,25 @@ async def init_db():
             session.add(gen)
 
         # Seed admins
-        for admin_id in settings.ADMIN_IDS:
-            admin_user = await session.get(User, admin_id)
-            if not admin_user:
-                admin_user = User(
-                    user_id=admin_id,
-                    username="Admin",
-                    full_name="Адміністратор",
-                    role="admin"
-                )
-                session.add(admin_user)
-            elif admin_user.role != "admin":
-                admin_user.role = "admin"
+        for admin_item in settings.ADMIN_IDS:
+            if isinstance(admin_item, int):
+                admin_user = await session.get(User, admin_item)
+                if not admin_user:
+                    admin_user = User(
+                        user_id=admin_item,
+                        username="Admin",
+                        full_name="Адміністратор",
+                        role="admin"
+                    )
+                    session.add(admin_user)
+                elif admin_user.role != "admin":
+                    admin_user.role = "admin"
+            elif isinstance(admin_item, str):
+                clean_name = admin_item.lstrip("@").lower()
+                u_res = await session.execute(select(User).where(User.username.ilike(clean_name)))
+                matched_u = u_res.scalar_one_or_none()
+                if matched_u and matched_u.role != "admin":
+                    matched_u.role = "admin"
 
         await session.commit()
     logger.info("База даних успішно ініціалізована.")
