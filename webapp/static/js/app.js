@@ -65,10 +65,22 @@ function updateKyivClock() {
 setInterval(updateKyivClock, 1000);
 updateKyivClock();
 
+// Helper to reliably parse server ISO timestamp as UTC milliseconds
+function parseUtcTime(isoStr) {
+  if (!isoStr) return Date.now();
+  let str = String(isoStr).trim();
+  // If no timezone offset (Z, +HH:MM, or -HH:MM), treat as UTC by appending Z
+  if (!str.endsWith("Z") && !str.includes("+") && !/[0-9]-[0-9]{2}:[0-9]{2}$/.test(str)) {
+    str += "Z";
+  }
+  const t = new Date(str).getTime();
+  return isNaN(t) ? Date.now() : t;
+}
+
 // Live Running Stopwatch
 function startLiveStopwatch(startTimeIso) {
   if (liveTimerInterval) clearInterval(liveTimerInterval);
-  activeStartTime = new Date(startTimeIso).getTime();
+  activeStartTime = parseUtcTime(startTimeIso);
 
   function tick() {
     const now = Date.now();

@@ -145,7 +145,7 @@ class GeneratorService:
         data = {
             "name": gen.name,
             "is_running": gen.is_running,
-            "current_start_time": gen.current_start_time.isoformat() if gen.current_start_time else None,
+            "current_start_time": gen.current_start_time.replace(tzinfo=timezone.utc).isoformat() if gen.current_start_time else None,
             "current_start_time_formatted": format_dt(gen.current_start_time) if gen.current_start_time else None,
             "current_start_user_name": gen.current_start_user_name,
             "current_run_hours": round(current_run_hours, 2),
@@ -220,7 +220,7 @@ class GeneratorService:
         await cache.delete("generator:dashboard")
 
         return True, "✅ Генератор успішно запущено!", {
-            "start_time": start_time,
+            "start_time": start_time.replace(tzinfo=timezone.utc).isoformat(),
             "operator": user_name,
             "current_fuel": gen.current_fuel,
             "total_hours": gen.total_hours,
