@@ -336,6 +336,20 @@ class ExcelService:
                 day_fuel_events.append((st, r.start_fuel, r.end_fuel))
             for ts, f in d_refuels:
                 day_fuel_events.append((ts, f.fuel_before, f.fuel_after))
+            for ts, a in d_audits:
+                if a.reset_type == "calibration" and a.details and "fuel:" in a.details:
+                    try:
+                        fuel_val_str = a.details.split("fuel:")[1].split("|")[0].strip()
+                        if fuel_val_str and fuel_val_str != "None":
+                            calib_val = float(fuel_val_str)
+                            day_fuel_events.append((ts, calib_val, calib_val))
+                    except Exception:
+                        pass
+                elif a.reset_type == "fuel_zero":
+                    day_fuel_events.append((ts, 0.0, 0.0))
+                elif a.reset_type == "all":
+                    day_fuel_events.append((ts, 0.0, 0.0))
+
             day_fuel_events.sort(key=lambda x: x[0])
 
             if day_fuel_events:
@@ -408,6 +422,100 @@ class ExcelService:
         if len(sorted_dates) > 0:
             ws_daily.auto_filter.ref = f"A1:{get_column_letter(len(daily_headers))}{tot_row_daily - 1}"
         auto_fit_columns(ws_daily, min_width=12, max_width=50)
+
+        # -----------------------------------------------------------------
+        # 2.5. MONTHLY REPORT SHEET (📅 Місячний звіт)
+        # -----------------------------------------------------------------
+        ws_monthly = wb.create_sheet(title="📅 Місячний звіт")
+        ws_monthly.sheet_properties.tabColor = "0284C7"
+        ws_monthly.views.sheetView[0].showGridLines = True
+        ws_monthly.freeze_panes = "A2"
+        ws_monthly.row_dimensions[1].height = 28
+
+        monthly_headers = [
+            "Місяць", "К-ть запусків", "Загальний час (год)", "Витрата палива (л)",
+            "Заправлено (л)", "Вартість заправок (₴)", "К-ть ТО", "Вартість ТО (₴)", "Всього витрат (₴)"
+        ]
+        for col_idx, h in enumerate(monthly_headers, start=1):
+            cell = ws_monthly.cell(row=1, column=col_idx)
+            apply_header_style(cell, h)
+
+        months_map = {}
+
+        def get_month_key(d: datetime):
+            return d.strftime("%Y-%m")
+
+        for d, data_dict in days_map.items():
+            month_key = d.strftime("%Y-%m")
+            if month_key not in months_map:
+                months_map[month_key] = {
+                    "runs_count": 0, "hours": 0.0, "fuel_burned": 0.0,
+                    "fuel_added": 0.0, "fuel_cost": 0.0,
+                    "maint_count": 0, "maint_cost": 0.0
+                }
+            
+            d_runs = data_dict["runs"]
+            d_refuels = data_dict["refuels"]
+            d_maints = data_dict["maints"]
+
+            months_map[month_key]["runs_count"] += len(d_runs)
+            months_map[month_key]["hours"] += sum(r.duration_hours for _, _, r in d_runs)
+            months_map[month_key]["fuel_burned"] += sum(r.fuel_consumed for _, _, r in d_runs)
+            months_map[month_key]["fuel_added"] += sum(f.amount_liters for _, f in d_refuels)
+            months_map[month_key]["fuel_cost"] += sum((f.cost or 0.0) for _, f in d_refuels)
+            months_map[month_key]["maint_count"] += len(d_maints)
+            months_map[month_key]["maint_cost"] += sum((m.cost or 0.0) for _, m in d_maints)
+
+        sorted_months = sorted(months_map.keys(), reverse=True)
+        
+        tot_m_runs = 0
+        tot_m_hours = 0.0
+        tot_m_burned = 0.0
+        tot_m_added = 0.0
+        tot_m_fcost = 0.0
+        tot_m_mcount = 0
+        tot_m_mcost = 0.0
+        
+        for row_idx, mk in enumerate(sorted_months, start=2):
+            md = months_map[mk]
+            is_even = (row_idx % 2 == 0)
+            ws_monthly.row_dimensions[row_idx].height = 21
+
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=1), mk, align="center", is_even=is_even, bold=True)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=2), md["runs_count"], align="center", is_even=is_even)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=3), round(md["hours"], 2), align="right", is_even=is_even, bold=True, text_color=BLUE_TXT)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=4), round(md["fuel_burned"], 2), align="right", is_even=is_even, bold=True, text_color=RED_TXT)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=5), round(md["fuel_added"], 1), align="right", is_even=is_even, bold=True, text_color=GREEN_TXT)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=6), f"{md['fuel_cost']:,.2f} ₴".replace(",", " ") if md["fuel_cost"] > 0 else "—", align="right", is_even=is_even, bold=bool(md["fuel_cost"]))
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=7), md["maint_count"], align="center", is_even=is_even)
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=8), f"{md['maint_cost']:,.2f} ₴".replace(",", " ") if md["maint_cost"] > 0 else "—", align="right", is_even=is_even, bold=bool(md["maint_cost"]))
+            total_exp = md["fuel_cost"] + md["maint_cost"]
+            apply_data_cell(ws_monthly.cell(row=row_idx, column=9), f"{total_exp:,.2f} ₴".replace(",", " ") if total_exp > 0 else "—", align="right", is_even=is_even, bold=True)
+
+            tot_m_runs += md["runs_count"]
+            tot_m_hours += md["hours"]
+            tot_m_burned += md["fuel_burned"]
+            tot_m_added += md["fuel_added"]
+            tot_m_fcost += md["fuel_cost"]
+            tot_m_mcount += md["maint_count"]
+            tot_m_mcost += md["maint_cost"]
+
+        tot_row_monthly = len(sorted_months) + 2
+        apply_total_row(ws_monthly, tot_row_monthly, len(monthly_headers), label="Всього:", sums={
+            2: tot_m_runs,
+            3: round(tot_m_hours, 2),
+            4: round(tot_m_burned, 2),
+            5: round(tot_m_added, 1),
+            6: f"{tot_m_fcost:,.2f} ₴".replace(",", " "),
+            7: tot_m_mcount,
+            8: f"{tot_m_mcost:,.2f} ₴".replace(",", " "),
+            9: f"{(tot_m_fcost + tot_m_mcost):,.2f} ₴".replace(",", " ")
+        })
+
+        if len(sorted_months) > 0:
+            ws_monthly.auto_filter.ref = f"A1:{get_column_letter(len(monthly_headers))}{tot_row_monthly - 1}"
+        auto_fit_columns(ws_monthly, min_width=14, max_width=40)
+
 
         # -----------------------------------------------------------------
         # 3. RUNS SHEET (⏱ Журнал запусків)
@@ -568,6 +676,7 @@ class ExcelService:
             "hours_zero": "⏱ ОБНУЛЕННЯ МОТОГОДИН",
             "maint_main": "🛠 СКИДАННЯ ГОЛОВНОГО ТО",
             "maint_intermediate": "🔧 СКИДАННЯ ПРОМІЖНОГО ТО",
+            "calibration": "⚖️ КАЛІБРУВАННЯ ПОКАЗНИКІВ",
         }
 
         for row_idx, a in enumerate(audits, start=2):

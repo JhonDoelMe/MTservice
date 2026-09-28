@@ -522,6 +522,8 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
     async with session_maker() as session:
         gen = await GeneratorService.calibrate_counters(
             session,
+            user_id=current_user["user_id"],
+            user_name=current_user["user_name"],
             total_hours=req.total_hours,
             current_fuel=req.current_fuel,
             fuel_rate=req.fuel_rate,

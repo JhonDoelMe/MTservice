@@ -486,6 +486,8 @@ class GeneratorService:
     @staticmethod
     async def calibrate_counters(
         session: AsyncSession,
+        user_id: int,
+        user_name: str,
         total_hours: Optional[float] = None,
         current_fuel: Optional[float] = None,
         fuel_rate: Optional[float] = None,
@@ -494,20 +496,48 @@ class GeneratorService:
         last_maint_hours: Optional[float] = None,
     ) -> GeneratorState:
         gen = await GeneratorService.get_state(session)
-        if total_hours is not None:
+        changes = []
+        old_state = {
+            "total_hours": gen.total_hours,
+            "current_fuel": gen.current_fuel,
+            "fuel_rate": gen.fuel_rate,
+            "tank_capacity": gen.tank_capacity,
+            "maintenance_interval_hours": gen.maintenance_interval_hours,
+            "last_maintenance_hours": gen.last_maintenance_hours,
+        }
+
+        if total_hours is not None and total_hours != gen.total_hours:
+            changes.append(f"Мотогодини: {gen.total_hours} -> {total_hours}")
             gen.total_hours = total_hours
-        if current_fuel is not None:
+        if current_fuel is not None and current_fuel != gen.current_fuel:
+            changes.append(f"Пальне: {gen.current_fuel} -> {current_fuel}")
             gen.current_fuel = current_fuel
-        if fuel_rate is not None:
+        if fuel_rate is not None and fuel_rate != gen.fuel_rate:
+            changes.append(f"Норма витрати: {gen.fuel_rate} -> {fuel_rate}")
             gen.fuel_rate = fuel_rate
-        if tank_capacity is not None:
+        if tank_capacity is not None and tank_capacity != gen.tank_capacity:
+            changes.append(f"Ємність бака: {gen.tank_capacity} -> {tank_capacity}")
             gen.tank_capacity = tank_capacity
-        if maintenance_interval is not None:
+        if maintenance_interval is not None and maintenance_interval != gen.maintenance_interval_hours:
+            changes.append(f"Інтервал ТО: {gen.maintenance_interval_hours} -> {maintenance_interval}")
             gen.maintenance_interval_hours = maintenance_interval
-        if last_maint_hours is not None:
+        if last_maint_hours is not None and last_maint_hours != gen.last_maintenance_hours:
+            changes.append(f"Останнє ТО (мч): {gen.last_maintenance_hours} -> {last_maint_hours}")
             gen.last_maintenance_hours = last_maint_hours
 
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        
+        if changes:
+            audit = AuditResetLog(
+                timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
+                reset_type="calibration",
+                reason="Ручне коригування (калібрування)",
+                user_id=user_id,
+                user_name=user_name,
+                details="; ".join(changes) + (f" | fuel:{current_fuel}" if current_fuel is not None else "")
+            )
+            session.add(audit)
+
         await session.commit()
         await session.refresh(gen)
         await cache.delete("generator:dashboard")
