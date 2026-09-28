@@ -56,35 +56,37 @@ async def init_db():
 
     # Safe auto-migration: add missing columns to existing tables
     cur_eng = get_engine()
-    try:
-        from sqlalchemy import text
-        async with cur_eng.begin() as conn:
-            migrations = [
-                # fuel_logs
-                ("fuel_logs", "receipt_number", "VARCHAR(100)"),
-                ("fuel_logs", "delivered_by", "VARCHAR(255)"),
-                ("fuel_logs", "generator_id", "INTEGER DEFAULT 1"),
-                # generator_state
-                ("generator_state", "fuel_type", "VARCHAR(50) DEFAULT 'ДП'"),
-                ("generator_state", "fuel_price", "FLOAT DEFAULT 52.40"),
-                ("generator_state", "auto_update_price", "BOOLEAN DEFAULT TRUE"),
-                # run_logs
-                ("run_logs", "generator_id", "INTEGER DEFAULT 1"),
-                # maintenance_logs
-                ("maintenance_logs", "generator_id", "INTEGER DEFAULT 1"),
-                # audit_reset_logs
-                ("audit_reset_logs", "generator_id", "INTEGER DEFAULT 1"),
-                # inventory_items
-                ("inventory_items", "generator_id", "INTEGER DEFAULT 1"),
-            ]
-            for table, col, col_type in migrations:
-                try:
+    is_postgres = "postgres" in cur_eng.url.drivername.lower() or "asyncpg" in cur_eng.url.drivername.lower()
+    migrations = [
+        # fuel_logs
+        ("fuel_logs", "receipt_number", "VARCHAR(100)"),
+        ("fuel_logs", "delivered_by", "VARCHAR(255)"),
+        ("fuel_logs", "generator_id", "INTEGER DEFAULT 1"),
+        # generator_state
+        ("generator_state", "fuel_type", "VARCHAR(50) DEFAULT 'ДП'"),
+        ("generator_state", "fuel_price", "FLOAT DEFAULT 52.40"),
+        ("generator_state", "auto_update_price", "BOOLEAN DEFAULT TRUE"),
+        # run_logs
+        ("run_logs", "generator_id", "INTEGER DEFAULT 1"),
+        # maintenance_logs
+        ("maintenance_logs", "generator_id", "INTEGER DEFAULT 1"),
+        # audit_reset_logs
+        ("audit_reset_logs", "generator_id", "INTEGER DEFAULT 1"),
+        # inventory_items
+        ("inventory_items", "generator_id", "INTEGER DEFAULT 1"),
+    ]
+
+    from sqlalchemy import text
+    for table, col, col_type in migrations:
+        try:
+            async with cur_eng.begin() as conn:
+                if is_postgres:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+                else:
                     await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
-                    logger.info(f"Migration: added {table}.{col}")
-                except Exception:
-                    pass  # Column already exists — OK
-    except Exception as e:
-        logger.warning(f"Migration warning: {e}")
+                logger.info(f"Migration: checked/added {table}.{col}")
+        except Exception as e:
+            logger.debug(f"Migration notice for {table}.{col}: {e}")
 
     session_maker = get_session_maker()
     async with session_maker() as session:
