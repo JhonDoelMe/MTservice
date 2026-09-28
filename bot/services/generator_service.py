@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.config import settings
 from bot.database.models import GeneratorState, RunLog, FuelLog, MaintenanceLog
+from bot.database.cache import cache
 
 
 def get_local_tz():
@@ -36,11 +37,11 @@ def format_duration(hours_float: float) -> str:
     hours = total_minutes // 60
     minutes = total_minutes % 60
     if hours > 0 and minutes > 0:
-        return f"{hours} ч {minutes} мин ({hours_float:.2f} ч)"
+        return f"{hours} год {minutes} хв ({hours_float:.2f} год)"
     elif hours > 0:
-        return f"{hours} ч"
+        return f"{hours} год"
     else:
-        return f"{minutes} мин ({hours_float:.2f} ч)"
+        return f"{minutes} хв ({hours_float:.2f} год)"
 
 
 class GeneratorService:
@@ -68,6 +69,11 @@ class GeneratorService:
 
     @staticmethod
     async def get_dashboard_data(session: AsyncSession) -> Dict[str, Any]:
+        # Check cache first
+        cached = await cache.get("generator:dashboard")
+        if cached:
+            return cached
+
         gen = await GeneratorService.get_state(session)
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -84,35 +90,43 @@ class GeneratorService:
 
         hours_to_maint = (gen.last_maintenance_hours + gen.maintenance_interval_hours) - total_hours_estimate
 
-        # Fuel percentage
         fuel_pct = 0.0
         if gen.tank_capacity > 0:
             fuel_pct = min(100.0, max(0.0, (current_fuel_estimate / gen.tank_capacity) * 100))
 
-        # Estimated remaining running time on current fuel
         remaining_runtime_hours = 0.0
         if gen.fuel_rate > 0:
             remaining_runtime_hours = current_fuel_estimate / gen.fuel_rate
 
-        return {
+        data = {
             "name": gen.name,
             "is_running": gen.is_running,
-            "current_start_time": gen.current_start_time,
+            "current_start_time": gen.current_start_time.isoformat() if gen.current_start_time else None,
+            "current_start_time_formatted": format_dt(gen.current_start_time) if gen.current_start_time else None,
             "current_start_user_name": gen.current_start_user_name,
-            "current_run_hours": current_run_hours,
-            "total_hours": total_hours_estimate,
-            "base_total_hours": gen.total_hours,
-            "current_fuel": current_fuel_estimate,
-            "fuel_rate": gen.fuel_rate,
-            "tank_capacity": gen.tank_capacity,
-            "fuel_pct": fuel_pct,
-            "remaining_runtime_hours": remaining_runtime_hours,
-            "last_maintenance_hours": gen.last_maintenance_hours,
-            "last_maintenance_date": gen.last_maintenance_date,
-            "maintenance_interval_hours": gen.maintenance_interval_hours,
-            "hours_to_maint": hours_to_maint,
+            "current_run_hours": round(current_run_hours, 2),
+            "current_run_duration_str": format_duration(current_run_hours),
+            "total_hours": round(total_hours_estimate, 2),
+            "base_total_hours": round(gen.total_hours, 2),
+            "current_fuel": round(current_fuel_estimate, 1),
+            "fuel_rate": round(gen.fuel_rate, 2),
+            "tank_capacity": round(gen.tank_capacity, 0),
+            "fuel_pct": round(fuel_pct, 1),
+            "remaining_runtime_hours": round(remaining_runtime_hours, 1),
+            "last_maintenance_hours": round(gen.last_maintenance_hours, 1),
+            "last_maintenance_date": gen.last_maintenance_date.isoformat() if gen.last_maintenance_date else None,
+            "last_maintenance_date_formatted": format_dt(gen.last_maintenance_date, include_time=False) if gen.last_maintenance_date else "—",
+            "maintenance_interval_hours": round(gen.maintenance_interval_hours, 0),
+            "hours_to_maint": round(hours_to_maint, 2),
             "warning_hours": settings.MAINTENANCE_WARNING_HOURS,
+            "currency": settings.CURRENCY,
+            "timezone": settings.TIMEZONE,
         }
+
+        # Cache for 3 seconds during running, 15 seconds when stopped
+        ttl = 3 if gen.is_running else 15
+        await cache.set("generator:dashboard", data, ttl=ttl)
+        return data
 
     @staticmethod
     async def start_generator(
@@ -124,12 +138,12 @@ class GeneratorService:
         gen = await GeneratorService.get_state(session)
         if gen.is_running:
             start_str = format_dt(gen.current_start_time)
-            return False, f"⚠️ Генератор уже запущен ({start_str}) оператором {gen.current_start_user_name or 'Неизвестно'}!", None
+            return False, f"⚠️ Генератор вже запущено ({start_str}) оператором {gen.current_start_user_name or 'Невідомо'}!", None
 
         start_time = custom_start_time or datetime.now(timezone.utc).replace(tzinfo=None)
 
         if gen.current_fuel <= 0.5:
-            return False, f"❌ Невозможно запустить генератор: критически мало топлива ({gen.current_fuel:.1f} л)! Сначала выполните заправку.", None
+            return False, f"❌ Неможливо запустити генератор: критично мало пального ({gen.current_fuel:.1f} л)! Спочатку заправте генератор.", None
 
         gen.is_running = True
         gen.current_start_time = start_time
@@ -139,8 +153,9 @@ class GeneratorService:
 
         await session.commit()
         await session.refresh(gen)
+        await cache.delete("generator:dashboard")
 
-        return True, "✅ Генератор успешно запущен!", {
+        return True, "✅ Генератор успішно запущено!", {
             "start_time": start_time,
             "operator": user_name,
             "current_fuel": gen.current_fuel,
@@ -158,13 +173,13 @@ class GeneratorService:
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         gen = await GeneratorService.get_state(session)
         if not gen.is_running:
-            return False, "⚠️ Генератор сейчас не находится в работе!", None
+            return False, "⚠️ Генератор зараз не працює!", None
 
         stop_time = custom_stop_time or datetime.now(timezone.utc).replace(tzinfo=None)
         start_time = gen.current_start_time or stop_time
 
         if stop_time < start_time:
-            return False, "❌ Время остановки не может быть раньше времени запуска!", None
+            return False, "❌ Час зупинки не може бути раніше часу запуску!", None
 
         delta = stop_time - start_time
         duration_hours = max(0.01, delta.total_seconds() / 3600.0)
@@ -173,7 +188,6 @@ class GeneratorService:
         end_fuel = round(max(0.0, start_fuel - fuel_consumed), 2)
         new_total_hours = round(gen.total_hours + duration_hours, 2)
 
-        # Create run log entry
         run_log = RunLog(
             start_time=start_time,
             stop_time=stop_time,
@@ -191,7 +205,6 @@ class GeneratorService:
         )
         session.add(run_log)
 
-        # Update state
         gen.is_running = False
         gen.current_start_time = None
         gen.current_start_user_id = None
@@ -202,10 +215,11 @@ class GeneratorService:
 
         await session.commit()
         await session.refresh(gen)
+        await cache.delete("generator:dashboard")
 
         hours_to_maint = (gen.last_maintenance_hours + gen.maintenance_interval_hours) - new_total_hours
 
-        return True, "✅ Генератор остановлен!", {
+        return True, "✅ Генератор успішно зупинено!", {
             "start_time": start_time,
             "stop_time": stop_time,
             "duration_hours": duration_hours,
@@ -227,7 +241,7 @@ class GeneratorService:
         notes: Optional[str] = None
     ) -> Tuple[bool, str, Dict[str, Any]]:
         if amount_liters <= 0:
-            return False, "❌ Объем заправки должен быть больше 0!", {}
+            return False, "❌ Об'єм заправки повинен бути більше 0!", {}
 
         gen = await GeneratorService.get_state(session)
         fuel_before = gen.current_fuel
@@ -249,8 +263,9 @@ class GeneratorService:
         session.add(fuel_log)
         await session.commit()
         await session.refresh(gen)
+        await cache.delete("generator:dashboard")
 
-        return True, "✅ Заправка успешно зафиксирована!", {
+        return True, "✅ Заправку успішно зафіксовано!", {
             "amount": amount_liters,
             "fuel_before": fuel_before,
             "fuel_after": fuel_after,
@@ -290,12 +305,14 @@ class GeneratorService:
         session.add(maint_log)
         await session.commit()
         await session.refresh(gen)
+        await cache.delete("generator:dashboard")
 
-        return True, "✅ Проведение ТО успешно сохранено!", {
+        return True, "✅ Проведення ТО успішно збережено!", {
             "hours_at_maint": hours_at_maint,
             "next_maint_hours": next_maint_hours,
             "interval": gen.maintenance_interval_hours,
             "description": description,
+            "cost": cost,
         }
 
     @staticmethod
@@ -325,4 +342,5 @@ class GeneratorService:
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await session.commit()
         await session.refresh(gen)
+        await cache.delete("generator:dashboard")
         return gen

@@ -3,7 +3,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 from sqlalchemy import select
 from bot.config import settings
-from bot.database.db import async_session_maker
+from bot.database.db import get_session_maker
 from bot.database.models import User
 from bot.keyboards.inline import get_user_approval_inline
 
@@ -22,22 +22,20 @@ class AuthMiddleware(BaseMiddleware):
 
         user_id = telegram_user.id
         username = telegram_user.username
-        full_name = telegram_user.full_name or "Без имени"
+        full_name = telegram_user.full_name or "Без імені"
 
-        async with async_session_maker() as session:
-            # Check if user is configured as admin in settings
+        session_maker = get_session_maker()
+        async with session_maker() as session:
             is_env_admin = user_id in settings.ADMIN_IDS
 
             result = await session.execute(select(User).where(User.user_id == user_id))
             db_user = result.scalar_one_or_none()
 
-            # Check if this is the very first user and no admins in env
             total_users_res = await session.execute(select(User))
             all_users = total_users_res.scalars().all()
             has_any_admin = any(u.role == "admin" for u in all_users) or len(settings.ADMIN_IDS) > 0
 
             if not db_user:
-                # If no admins configured anywhere, make the first user admin
                 if not has_any_admin or is_env_admin:
                     initial_role = "admin"
                 else:
@@ -54,7 +52,6 @@ class AuthMiddleware(BaseMiddleware):
                 await session.refresh(db_user)
 
                 if initial_role == "pending":
-                    # Notify bot admins
                     bot = data.get("bot")
                     if bot:
                         admin_ids_to_notify = set(settings.ADMIN_IDS)
@@ -67,11 +64,11 @@ class AuthMiddleware(BaseMiddleware):
                                 await bot.send_message(
                                     chat_id=adm_id,
                                     text=(
-                                        f"🔔 <b>Новый запрос доступа!</b>\n\n"
-                                        f"👤 <b>Пользователь:</b> {full_name}\n"
-                                        f"🔗 <b>Username:</b> @{username if username else 'отсутствует'}\n"
+                                        f"🔔 <b>Новий запит на доступ!</b>\n\n"
+                                        f"👤 <b>Користувач:</b> {full_name}\n"
+                                        f"🔗 <b>Username:</b> @{username if username else 'відсутній'}\n"
                                         f"🆔 <b>ID:</b> <code>{user_id}</code>\n\n"
-                                        f"Выберите действие для выдачи прав:"
+                                        f"Виберіть дію для надання доступу:"
                                     ),
                                     parse_mode="HTML",
                                     reply_markup=get_user_approval_inline(user_id)
@@ -79,34 +76,31 @@ class AuthMiddleware(BaseMiddleware):
                             except Exception:
                                 pass
             else:
-                # Update info if changed
                 if is_env_admin and db_user.role != "admin":
                     db_user.role = "admin"
                     await session.commit()
 
-            # Store user status in data context
             data["user_role"] = db_user.role
             data["is_admin"] = (db_user.role == "admin")
 
-            # Check permissions
             if db_user.role == "blocked":
-                text = "⛔ <b>Доступ запрещен.</b>\nВаш аккаунт заблокирован администратором системы."
+                text = "⛔ <b>Доступ заборонено.</b>\nВаш акаунт заблоковано адміністратором системи."
                 if isinstance(event, Message):
                     await event.answer(text, parse_mode="HTML")
                 elif isinstance(event, CallbackQuery):
-                    await event.answer("Доступ запрещен!", show_alert=True)
+                    await event.answer("Доступ заборонено!", show_alert=True)
                 return
 
             if db_user.role == "pending":
                 text = (
-                    f"⏳ <b>Запрос на доступ отправлен.</b>\n\n"
+                    f"⏳ <b>Запит на доступ очікує підтвердження.</b>\n\n"
                     f"Ваш ID: <code>{user_id}</code>\n"
-                    f"Пожалуйста, обратитесь к администратору для подтверждения роли оператора."
+                    f"Будь ласка, зверніться до адміністратора для активації ролі оператора."
                 )
                 if isinstance(event, Message):
                     await event.answer(text, parse_mode="HTML")
                 elif isinstance(event, CallbackQuery):
-                    await event.answer("Ожидайте подтверждения доступа администратором.", show_alert=True)
+                    await event.answer("Очікуйте підтвердження доступу адміністратором.", show_alert=True)
                 return
 
         return await handler(event, data)

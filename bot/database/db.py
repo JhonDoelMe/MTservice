@@ -1,18 +1,61 @@
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import select
 from bot.config import settings
 from bot.database.models import Base, GeneratorState, User
+from bot.database.cache import cache
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+logger = logging.getLogger(__name__)
+
+# Fallback engine if Postgres is not running locally
+_active_engine = None
+_session_maker = None
+
+
+def get_engine():
+    global _active_engine, _session_maker
+    if _active_engine is None:
+        try:
+            _active_engine = create_async_engine(
+                settings.DATABASE_URL,
+                echo=False,
+                pool_pre_ping=True
+            )
+            _session_maker = async_sessionmaker(_active_engine, expire_on_commit=False, class_=AsyncSession)
+        except Exception as e:
+            logger.warning(f"Не вдалося ініціалізувати двигун {settings.DATABASE_URL}: {e}")
+            fallback_url = "sqlite+aiosqlite:///data/generator.db"
+            logger.info(f"Використовується резервний SQLite двигун: {fallback_url}")
+            _active_engine = create_async_engine(fallback_url, echo=False)
+            _session_maker = async_sessionmaker(_active_engine, expire_on_commit=False, class_=AsyncSession)
+    return _active_engine
+
+
+def get_session_maker():
+    if _session_maker is None:
+        get_engine()
+    return _session_maker
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    global _active_engine, _session_maker
+    await cache.init()
 
-    async with async_session_maker() as session:
-        # Check if default generator exists
+    # Try connecting with configured engine
+    engine = get_engine()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        logger.warning(f"Помилка підключення до первинної БД ({e}). Перемикання на SQLite резерв...")
+        fallback_url = "sqlite+aiosqlite:///data/generator.db"
+        _active_engine = create_async_engine(fallback_url, echo=False)
+        _session_maker = async_sessionmaker(_active_engine, expire_on_commit=False, class_=AsyncSession)
+        async with _active_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
         result = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
         gen = result.scalar_one_or_none()
         if not gen:
@@ -29,14 +72,14 @@ async def init_db():
             )
             session.add(gen)
 
-        # Seed admins if any
+        # Seed admins
         for admin_id in settings.ADMIN_IDS:
             admin_user = await session.get(User, admin_id)
             if not admin_user:
                 admin_user = User(
                     user_id=admin_id,
                     username="Admin",
-                    full_name="Administrator",
+                    full_name="Адміністратор",
                     role="admin"
                 )
                 session.add(admin_user)
@@ -44,8 +87,15 @@ async def init_db():
                 admin_user.role = "admin"
 
         await session.commit()
+    logger.info("База даних успішно ініціалізована.")
 
 
-async def get_session() -> AsyncSession:
-    async with async_session_maker() as session:
+def async_session_maker():
+    maker = get_session_maker()
+    return maker()
+
+
+async def get_session():
+    maker = get_session_maker()
+    async with maker() as session:
         yield session

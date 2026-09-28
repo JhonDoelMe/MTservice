@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Диспетчер генератора</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon">⚡</span>
+      <div>
+        <div class="brand-title" id="genName">Основний ДГУ</div>
+        <div class="brand-subtitle" id="userRoleBadge">Диспетчерська</div>
+      </div>
+    </div>
+    <div class="status-badge stopped" id="headerStatusBadge">
+      <div class="pulse-dot"></div>
+      <span id="headerStatusText">ЗУПИНЕНО</span>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+
+    <!-- TAB 1: ГОЛОВНА (DASHBOARD) -->
+    <div class="tab-page active" id="tabDashboard">
+      
+      <!-- Power Control Card -->
+      <div class="card" id="powerCard">
+        <div class="card-header">
+          <span class="card-title">Керування живленням</span>
+          <span style="font-size: 12px; color: var(--hint-color);" id="currentTimeKyiv">Київ</span>
+        </div>
+
+        <div id="runningView" style="display: none;">
+          <div class="live-label">Генератор працює вже:</div>
+          <div class="live-timer" id="liveTimer">00:00:00</div>
+          <div class="live-label" id="runningOperatorInfo">Запустив: Оператор</div>
+          <button class="main-action-btn stop-btn" onclick="openStopModal()">
+            <span>⏹️</span> ЗУПИНИТИ ГЕНЕРАТОР
+          </button>
+        </div>
+
+        <div id="stoppedView">
+          <div style="text-align: center; padding: 10px 0; color: var(--hint-color); font-size: 14px;">
+            Генератор знаходиться в резерві
+          </div>
+          <button class="main-action-btn start-btn" onclick="openStartModal()">
+            <span>▶️</span> ЗАПУСТИТИ ГЕНЕРАТОР
+          </button>
+        </div>
+      </div>
+
+      <!-- Fuel Tank Hero Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Паливний бак</span>
+          <span class="fuel-pct-chip" id="fuelPctChip">0%</span>
+        </div>
+        <div class="fuel-visual">
+          <div class="fuel-top-info">
+            <span class="fuel-amount" id="fuelLiters">0 л</span>
+            <span class="fuel-capacity" id="fuelCapacity">із 150 л</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="fuelProgressBar" style="width: 50%;"></div>
+          </div>
+          <div class="fuel-meta-row">
+            <span>Вистачить приблизно на:</span>
+            <span class="fuel-meta-val" id="fuelHoursRemaining">~0 год</span>
+          </div>
+          <div class="fuel-meta-row">
+            <span>Норма витрати:</span>
+            <span class="fuel-meta-val" id="fuelRateText">4.5 л/год</span>
+          </div>
+        </div>
+        <div style="margin-top: 14px;">
+          <button class="btn-secondary" style="width: 100%;" onclick="openRefuelModal()">
+            <span>⛽</span> Зафіксувати заправку
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">⏱ Напрацювання</div>
+          <div class="metric-value" id="totalHoursVal">0.00 мч</div>
+          <div class="metric-sub" style="color: var(--hint-color);">Загальний лічильник</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">🔧 До планового ТО</div>
+          <div class="metric-value" id="hoursToMaintVal">0.0 мч</div>
+          <div class="metric-sub" id="maintStatusBadge">В нормі</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB 2: ПАЛЬНЕ (FUEL) -->
+    <div class="tab-page" id="tabFuel">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Поточний залишок</span>
+        </div>
+        <div style="font-size: 28px; font-weight: 800;" id="fuelTabAmount">0.0 л</div>
+        <div style="font-size: 13px; color: var(--hint-color); margin-top: 4px;" id="fuelTabCap">Ємність бака: 150 л</div>
+        <button class="btn-primary" style="margin-top: 14px;" onclick="openRefuelModal()">
+          + Додати заправку
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Останні заправки</span>
+        </div>
+        <div id="fuelHistoryList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: ТЕХНІЧНЕ ОБСЛУГОВУВАННЯ (MAINTENANCE) -->
+    <div class="tab-page" id="tabMaint">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Регламентне обслуговування</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <div>
+            <div style="font-size: 28px; font-weight: 800;" id="maintTabRemain">0.0 мч</div>
+            <div style="font-size: 12px; color: var(--hint-color);">до наступного сервісу</div>
+          </div>
+          <div id="maintTabStatusChip" class="badge-normal" style="font-size: 14px; font-weight: 700;">🟢 В нормі</div>
+        </div>
+
+        <div style="margin-top: 14px; font-size: 13px; color: var(--hint-color);">
+          <div>• Періодичність ТО: <b style="color: var(--text-color);" id="maintTabInterval">250 мч</b></div>
+          <div style="margin-top: 4px;">• Попереднє ТО на позначці: <b style="color: var(--text-color);" id="maintTabLast">0 мч</b></div>
+        </div>
+
+        <button class="btn-primary" style="margin-top: 16px;" onclick="openMaintModal()">
+          🛠 Відмітити проведення ТО
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Історія виконаних ТО</span>
+        </div>
+        <div id="maintHistoryList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: ЗВІТИ (REPORTS) -->
+    <div class="tab-page" id="tabReports">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Зведення за сьогодні</span>
+          <span style="font-size: 12px; color: var(--hint-color);" id="todayDateStr">Сьогодні</span>
+        </div>
+        <div class="metrics-grid">
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Час роботи</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repTodayHours">0 год</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Витрата пального</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repTodayFuel">0.0 л</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Заправлено</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repTodayRefuel">0.0 л</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Кількість запусків</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repTodayRuns">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Зведення за поточний місяць</span>
+        </div>
+        <div class="metrics-grid">
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Загальний час</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repMonthHours">0 год</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: var(--hint-color);">Загальна витрата</div>
+            <div style="font-size: 17px; font-weight: 700;" id="repMonthFuel">0.0 л</div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);" onclick="downloadExcelReport()">
+        📥 Завантажити повний звіт Excel (.xlsx)
+      </button>
+
+      <div class="card" style="margin-top: 14px;">
+        <div class="card-header">
+          <span class="card-title">Останні сесії роботи</span>
+        </div>
+        <div id="runsHistoryList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: НАЛАШТУВАННЯ (SETTINGS) -->
+    <div class="tab-page" id="tabSettings">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Калібрування показників</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Поточні мотогодини (за тахометром генератора):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" step="0.1" id="calibHoursInput" class="form-input" placeholder="напр. 150.5">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibHours()">Зберегти</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Фактичний залишок пального в баку (л):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" step="1" id="calibFuelInput" class="form-input" placeholder="напр. 85">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibFuel()">Зберегти</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Паспортна норма витрати (л/год):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" step="0.1" id="calibRateInput" class="form-input" placeholder="напр. 4.5">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibRate()">Зберегти</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Об'єм бака генератора (л):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" step="1" id="calibTankInput" class="form-input" placeholder="напр. 150">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibTank()">Зберегти</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Інтервал між плановими ТО (мч):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" step="10" id="calibIntervalInput" class="form-input" placeholder="напр. 250">
+            <button class="btn-secondary" style="width: 100px;" onclick="saveCalibInterval()">Зберегти</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Користувачі та доступ</span>
+        </div>
+        <div id="usersList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- BOTTOM NAVIGATION -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" onclick="switchTab('tabDashboard', this)">
+      <span class="nav-icon">⚡</span>
+      <span>Головна</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('tabFuel', this)">
+      <span class="nav-icon">⛽</span>
+      <span>Пальне</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('tabMaint', this)">
+      <span class="nav-icon">🔧</span>
+      <span>ТО</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('tabReports', this)">
+      <span class="nav-icon">📊</span>
+      <span>Звіти</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('tabSettings', this)">
+      <span class="nav-icon">⚙️</span>
+      <span>Опції</span>
+    </button>
+  </nav>
+
+  <!-- MODAL: ЗАПУСК ГЕНЕРАТОРА -->
+  <div class="modal-overlay" id="startModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">▶️ Запуск генератора</div>
+        <button class="close-btn" onclick="closeModal('startModal')">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Час запуску:</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+          <button class="btn-secondary" onclick="setStartTimeOffset(0)">Зараз</button>
+          <button class="btn-secondary" onclick="setStartTimeOffset(15)">15 хв тому</button>
+          <button class="btn-secondary" onclick="setStartTimeOffset(30)">30 хв тому</button>
+          <button class="btn-secondary" onclick="setStartTimeOffset(60)">1 год тому</button>
+        </div>
+        <input type="text" id="startCustomTimeInput" class="form-input" placeholder="або введіть час: напр. 10:15 або -20">
+      </div>
+
+      <button class="btn-primary" style="background: var(--accent-green);" onclick="submitStartGenerator()">
+        Підтвердити запуск
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: ЗУПИНКА ГЕНЕРАТОРА -->
+  <div class="modal-overlay" id="stopModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">⏹️ Зупинка генератора</div>
+        <button class="close-btn" onclick="closeModal('stopModal')">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Час зупинки:</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+          <button class="btn-secondary" onclick="setStopTimeOffset(0)">Зараз</button>
+          <button class="btn-secondary" onclick="setStopTimeOffset(10)">10 хв тому</button>
+        </div>
+        <input type="text" id="stopCustomTimeInput" class="form-input" placeholder="або введіть час: напр. 12:45 або -10">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Примітки / причина зупинки (необов'язково):</label>
+        <input type="text" id="stopNotesInput" class="form-input" placeholder="напр. Відновлено міське електропостачання">
+      </div>
+
+      <button class="btn-primary" style="background: var(--accent-red);" onclick="submitStopGenerator()">
+        Підтвердити зупинку
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: ЗАПРАВКА -->
+  <div class="modal-overlay" id="refuelModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">⛽ Фіксація заправки</div>
+        <button class="close-btn" onclick="closeModal('refuelModal')">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Об'єм пального (літрів):</label>
+        <input type="number" step="0.5" id="refuelAmountInput" class="form-input" placeholder="наприклад: 50">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Вартість заправки (₴, необов'язково):</label>
+        <input type="number" step="1" id="refuelCostInput" class="form-input" placeholder="наприклад: 2800">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Коментар / чек / джерело:</label>
+        <input type="text" id="refuelNotesInput" class="form-input" placeholder="наприклад: АЗС WOG, чек 8492 або Резервна бочка">
+      </div>
+
+      <button class="btn-primary" onclick="submitRefuel()">
+        Зберегти заправку
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: ПРОВЕДЕННЯ ТО -->
+  <div class="modal-overlay" id="maintModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">🛠 Проведення планового ТО</div>
+        <button class="close-btn" onclick="closeModal('maintModal')">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Опис виконаних робіт:</label>
+        <textarea id="maintDescInput" class="form-textarea" rows="3" placeholder="наприклад: Заміна моторної оливи 15W-40, масляного та паливного фільтрів, продувка радіатора"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Замінені деталі та розхідники:</label>
+        <input type="text" id="maintPartsInput" class="form-input" placeholder="наприклад: Фільтр HF-21, олива Shell Rimula 10л">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Вартість робіт та матеріалів (₴, необов'язково):</label>
+        <input type="number" step="1" id="maintCostInput" class="form-input" placeholder="наприклад: 4500">
+      </div>
+
+      <button class="btn-primary" onclick="submitMaintenance()">
+        Зберегти та оновити лічильник ТО
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
