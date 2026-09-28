@@ -99,11 +99,11 @@ def get_user_approval_inline(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Одобрить (Оператор)", callback_data=f"adm_appr_{user_id}"),
-                InlineKeyboardButton(text="👑 Сделать админом", callback_data=f"adm_make_{user_id}")
+                InlineKeyboardButton(text="✅ Схвалити (Оператор)", callback_data=f"adm_appr_{user_id}"),
+                InlineKeyboardButton(text="👑 Зробити адміном", callback_data=f"adm_make_{user_id}")
             ],
             [
-                InlineKeyboardButton(text="⛔ Заблокировать", callback_data=f"adm_block_{user_id}")
+                InlineKeyboardButton(text="⛔ Заблокувати", callback_data=f"adm_block_{user_id}")
             ]
         ]
     )

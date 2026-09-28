@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import FuelLog, GeneratorState, MaintenanceLog, RunLog
-from bot.services.generator_service import format_dt, utc_to_local
+from bot.services.generator_service import format_dt
 
 
 def apply_header_style(cell):
@@ -27,9 +27,9 @@ class ExcelService:
     async def generate_full_report(session: AsyncSession) -> BytesIO:
         wb = Workbook()
 
-        # 1. Summary sheet
+        # 1. Summary sheet (Зведення)
         ws_summary = wb.active
-        ws_summary.title = "Сводка"
+        ws_summary.title = "Зведення"
         ws_summary.views.sheetView[0].showGridLines = True
 
         gen_res = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
@@ -47,30 +47,34 @@ class ExcelService:
         total_hours_ran = sum(r.duration_hours for r in runs)
         total_fuel_burned = sum(r.fuel_consumed for r in runs)
         total_fuel_added = sum(f.amount_liters for f in refuels)
+        total_fuel_cost = sum((f.cost or 0.0) for f in refuels)
+        total_maint_cost = sum((m.cost or 0.0) for m in maints)
 
-        # Summary title
+        # Title
         ws_summary.merge_cells("A1:D1")
         title_cell = ws_summary["A1"]
-        title_cell.value = f"Отчет по генератору: {gen.name if gen else 'Генератор'}"
+        title_cell.value = f"Звіт по генератору: {gen.name if gen else 'Генератор'}"
         title_cell.font = Font(name="Calibri", size=14, bold=True, color="1F4E79")
         title_cell.alignment = Alignment(horizontal="left", vertical="center")
 
-        ws_summary["A2"] = f"Сформирован: {format_dt(datetime.utcnow())}"
+        ws_summary["A2"] = f"Сформовано: {format_dt(datetime.utcnow())} (Київський час)"
         ws_summary["A2"].font = Font(name="Calibri", size=9, italic=True, color="595959")
 
         summary_data = [
-            ("Текущий статус", "В РАБОТЕ" if (gen and gen.is_running) else "ОСТАНОВЛЕН"),
-            ("Текущая наработка (моточасы)", f"{gen.total_hours:.2f} мч" if gen else "0 мч"),
-            ("Остаток топлива в баке", f"{gen.current_fuel:.1f} л из {gen.tank_capacity:.1f} л" if gen else "0 л"),
-            ("Паспортный расход", f"{gen.fuel_rate:.2f} л/ч" if gen else "—"),
-            ("Интервал планового ТО", f"{gen.maintenance_interval_hours:.1f} мч" if gen else "—"),
-            ("Наработка при последнем ТО", f"{gen.last_maintenance_hours:.1f} мч" if gen else "—"),
-            ("Остаток до следующего ТО", f"{((gen.last_maintenance_hours + gen.maintenance_interval_hours) - gen.total_hours):.2f} мч" if gen else "—"),
-            ("Всего зафиксировано запусков", len(runs)),
-            ("Суммарное время работы по журналу", f"{total_hours_ran:.2f} ч"),
-            ("Суммарный расход топлива", f"{total_fuel_burned:.2f} л"),
-            ("Суммарно заправлено", f"{total_fuel_added:.2f} л"),
-            ("Количество проведенных ТО", len(maints)),
+            ("Поточний статус", "В РОБОТІ" if (gen and gen.is_running) else "ЗУПИНЕНО"),
+            ("Загальне напрацювання (мотогодини)", f"{gen.total_hours:.2f} мч" if gen else "0 мч"),
+            ("Залишок пального в баку", f"{gen.current_fuel:.1f} л із {gen.tank_capacity:.1f} л" if gen else "0 л"),
+            ("Паспортна норма витрати", f"{gen.fuel_rate:.2f} л/год" if gen else "—"),
+            ("Інтервал планового ТО", f"{gen.maintenance_interval_hours:.1f} мч" if gen else "—"),
+            ("Напрацювання під час останнього ТО", f"{gen.last_maintenance_hours:.1f} мч" if gen else "—"),
+            ("Залишок до наступного ТО", f"{((gen.last_maintenance_hours + gen.maintenance_interval_hours) - gen.total_hours):.2f} мч" if gen else "—"),
+            ("Всього зафіксовано запусків", len(runs)),
+            ("Сумарний час роботи по журналу", f"{total_hours_ran:.2f} год"),
+            ("Сумарна витрата пального", f"{total_fuel_burned:.2f} л"),
+            ("Сумарно заправлено пального", f"{total_fuel_added:.2f} л"),
+            ("Сумарні витрати на заправку", f"{total_fuel_cost:.2f} ₴"),
+            ("Кількість проведених ТО", len(maints)),
+            ("Сумарні витрати на ТО", f"{total_maint_cost:.2f} ₴"),
         ]
 
         row = 4
@@ -81,13 +85,13 @@ class ExcelService:
             apply_cell_border(ws_summary.cell(row=row, column=2))
             row += 1
 
-        # 2. Runs sheet
-        ws_runs = wb.create_sheet(title="Журнал запусков")
+        # 2. Runs sheet (Журнал запусків)
+        ws_runs = wb.create_sheet(title="Журнал запусків")
         ws_runs.views.sheetView[0].showGridLines = True
         run_headers = [
-            "№", "Запуск", "Остановка", "Время работы (ч)", "Расход (л)",
-            "Норма (л/ч)", "Бак до (л)", "Бак после (л)", "Наработка (мч)",
-            "Запустил", "Остановил", "Заметки"
+            "№", "Час запуску", "Час зупинки", "Час роботи (год)", "Витрата (л)",
+            "Норма (л/год)", "Бак до (л)", "Бак після (л)", "Напрацювання (мч)",
+            "Запустив", "Зупинив", "Примітки"
         ]
         for col_idx, header in enumerate(run_headers, start=1):
             cell = ws_runs.cell(row=1, column=col_idx, value=header)
@@ -109,10 +113,10 @@ class ExcelService:
             for c in range(1, 13):
                 apply_cell_border(ws_runs.cell(row=row_idx, column=c))
 
-        # 3. Refuels sheet
+        # 3. Refuels sheet (Заправки)
         ws_fuel = wb.create_sheet(title="Заправки")
         ws_fuel.views.sheetView[0].showGridLines = True
-        fuel_headers = ["№", "Дата и время", "Заправлено (л)", "Бак до (л)", "Бак после (л)", "Стоимость", "Кто заправил", "Заметки"]
+        fuel_headers = ["№", "Дата і час", "Заправлено (л)", "Бак до (л)", "Бак після (л)", "Вартість (₴)", "Хто заправив", "Примітки"]
         for col_idx, header in enumerate(fuel_headers, start=1):
             cell = ws_fuel.cell(row=1, column=col_idx, value=header)
             apply_header_style(cell)
@@ -129,10 +133,10 @@ class ExcelService:
             for c in range(1, 9):
                 apply_cell_border(ws_fuel.cell(row=row_idx, column=c))
 
-        # 4. Maintenance sheet
-        ws_maint = wb.create_sheet(title="Обслуживание (ТО)")
+        # 4. Maintenance sheet (ТО)
+        ws_maint = wb.create_sheet(title="Обслуговування (ТО)")
         ws_maint.views.sheetView[0].showGridLines = True
-        maint_headers = ["№", "Дата", "Моточасы ТО", "Следующее ТО (мч)", "Описание работ", "Замененные детали", "Стоимость", "Кто провел"]
+        maint_headers = ["№", "Дата і час", "Мотогодини ТО", "Наступне ТО (мч)", "Опис робіт", "Замінені деталі", "Вартість (₴)", "Хто виконав"]
         for col_idx, header in enumerate(maint_headers, start=1):
             cell = ws_maint.cell(row=1, column=col_idx, value=header)
             apply_header_style(cell)
@@ -149,7 +153,7 @@ class ExcelService:
             for c in range(1, 9):
                 apply_cell_border(ws_maint.cell(row=row_idx, column=c))
 
-        # Auto-adjust column widths for all sheets
+        # Auto-adjust column widths
         for sheet in wb.worksheets:
             for col in sheet.columns:
                 max_len = 0

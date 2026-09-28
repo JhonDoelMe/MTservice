@@ -10,19 +10,31 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    # Telegram Bot
     BOT_TOKEN: str = ""
     ADMIN_IDS: Union[List[int], str] = []
-    TIMEZONE: str = "Europe/Moscow"
-    DATABASE_URL: str = "sqlite+aiosqlite:///data/generator.db"
+    WEBAPP_URL: str = "http://localhost:8080"  # Зовнішній HTTPS URL для Telegram Mini App (наприклад з ngrok, cloudflare або домену)
 
-    # Generator defaults
-    GENERATOR_NAME: str = "Основной ДГУ"
+    # Локалізація (Тільки Україна)
+    TIMEZONE: str = "Europe/Kyiv"
+    CURRENCY: str = "₴"
+
+    # База даних (PostgreSQL) та кеш (Redis)
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/mtservice"
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Веб-сервер Mini App (FastAPI)
+    WEB_HOST: str = "0.0.0.0"
+    WEB_PORT: int = 8080
+
+    # Початкові параметри генератора (дефолтні значення для об'єкта)
+    GENERATOR_NAME: str = "Основний ДГУ"
     INITIAL_TOTAL_HOURS: float = 0.0
-    FUEL_RATE_PER_HOUR: float = 4.5
-    TANK_CAPACITY: float = 150.0
-    INITIAL_FUEL_LEVEL: float = 100.0
-    MAINTENANCE_INTERVAL_HOURS: float = 250.0
-    MAINTENANCE_WARNING_HOURS: float = 20.0
+    FUEL_RATE_PER_HOUR: float = 4.5  # літрів на годину
+    TANK_CAPACITY: float = 150.0      # літрів
+    INITIAL_FUEL_LEVEL: float = 100.0 # літрів
+    MAINTENANCE_INTERVAL_HOURS: float = 250.0  # мотогодин між ТО
+    MAINTENANCE_WARNING_HOURS: float = 20.0    # попереджати за 20 мч
 
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod

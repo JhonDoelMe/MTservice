@@ -5,7 +5,7 @@ from aiogram import Bot
 from sqlalchemy import select
 
 from bot.config import settings
-from bot.database.db import async_session_maker
+from bot.database.db import get_session_maker
 from bot.database.models import User
 from bot.services.generator_service import GeneratorService, format_duration
 
@@ -13,16 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 async def background_monitoring_loop(bot: Bot):
-    """Periodic background task checking runtime anomalies, fuel levels, and maintenance."""
-    logger.info("Starting background monitoring loop...")
+    """Періодичний фоновий моніторинг тривалості роботи, залишку пального та регламенту ТО."""
+    logger.info("Запуск фонового циклу моніторингу генератора...")
     while True:
         try:
-            await asyncio.sleep(1800)  # Check every 30 minutes
+            await asyncio.sleep(1800)  # Перевірка кожні 30 хвилин
 
-            async with async_session_maker() as session:
+            session_maker = get_session_maker()
+            async with session_maker() as session:
                 dash = await GeneratorService.get_dashboard_data(session)
 
-                # Get all active operators and admins to notify
                 users_res = await session.execute(
                     select(User).where(User.role.in_(["admin", "operator"]))
                 )
@@ -30,14 +30,14 @@ async def background_monitoring_loop(bot: Bot):
                 if not notify_users:
                     continue
 
-                # 1. Alert if generator is running continuously > 8 hours
+                # 1. Попередження про безперервну роботу > 8 годин
                 if dash["is_running"] and dash["current_run_hours"] >= 8.0:
                     dur_str = format_duration(dash["current_run_hours"])
                     msg = (
-                        f"⚠️ <b>Внимание: длительная работа генератора!</b>\n\n"
-                        f"Генератор работает непрерывно уже: <b>{dur_str}</b>.\n"
-                        f"Остаток топлива: <code>{dash['current_fuel']:.1f} л</code> (~{dash['remaining_runtime_hours']:.1f} ч).\n"
-                        f"Проверьте необходимость продолжения работы или дозаправки."
+                        f"⚠️ <b>Увага: тривала робота генератора!</b>\n\n"
+                        f"Генератор працює безперервно вже: <b>{dur_str}</b>.\n"
+                        f"Залишок пального: <code>{dash['current_fuel']:.1f} л</code> (~{dash['remaining_runtime_hours']:.1f} год).\n"
+                        f"Перевірте необхідність продовження роботи або дозаправки."
                     )
                     for u in notify_users:
                         try:
@@ -45,13 +45,13 @@ async def background_monitoring_loop(bot: Bot):
                         except Exception:
                             pass
 
-                # 2. Critical fuel warning (< 15%)
+                # 2. Критичний залишок пального (< 15%)
                 if dash["fuel_pct"] <= 15.0 and dash["is_running"]:
                     msg = (
-                        f"🚨 <b>Критический остаток топлива!</b>\n\n"
-                        f"В баке осталось: <code>{dash['current_fuel']:.1f} л</code> ({dash['fuel_pct']:.0f}%).\n"
-                        f"Топлива хватит примерно на: <b>{dash['remaining_runtime_hours']:.1f} ч</b>.\n"
-                        f"Срочно организуйте заправку генератора!"
+                        f"🚨 <b>Критичний залишок пального!</b>\n\n"
+                        f"У баку залишилося: <code>{dash['current_fuel']:.1f} л</code> ({dash['fuel_pct']:.0f}%).\n"
+                        f"Пального вистачить приблизно на: <b>{dash['remaining_runtime_hours']:.1f} год</b>.\n"
+                        f"Терміново організуйте заправку генератора!"
                     )
                     for u in notify_users:
                         try:
@@ -59,12 +59,12 @@ async def background_monitoring_loop(bot: Bot):
                         except Exception:
                             pass
 
-                # 3. Maintenance overdue warning
+                # 3. Прострочене ТО
                 if dash["hours_to_maint"] <= 0:
                     msg = (
-                        f"🔧 <b>Внимание! Плановое ТО генератора просрочено!</b>\n\n"
-                        f"Перепробег: <b>{abs(dash['hours_to_maint']):.1f} мч</b>.\n"
-                        f"Пожалуйста, выполните регламентные работы и отметьте в боте."
+                        f"🔧 <b>Увага! Планове ТО генератора прострочено!</b>\n\n"
+                        f"Перепробіг: <b>{abs(dash['hours_to_maint']):.1f} мч</b>.\n"
+                        f"Будь ласка, виконайте регламентні роботи та зафіксуйте у диспетчерській."
                     )
                     for u in notify_users:
                         try:
@@ -75,5 +75,5 @@ async def background_monitoring_loop(bot: Bot):
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Error in background monitoring loop: {e}", exc_info=True)
+            logger.error(f"Помилка фонового моніторингу: {e}", exc_info=True)
             await asyncio.sleep(60)
