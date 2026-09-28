@@ -622,6 +622,49 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
     return {"status": "ok", "message": "Параметри оновлено"}
 
 
+from bot.database.models import InventoryItem
+
+@app.get("/api/inventory")
+async def get_inventory(current_user: Dict[str, Any] = Depends(get_current_user)):
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        res = await session.execute(select(InventoryItem).order_by(InventoryItem.id))
+        items = res.scalars().all()
+        # Seed default items if empty
+        if not items:
+            default_items = [
+                InventoryItem(name="Олива 10w40 (1л)", quantity=0, unit="шт", min_threshold=2),
+                InventoryItem(name="Фільтр масляний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Фільтр повітряний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Фільтр паливний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Свічка запалювання", quantity=0, unit="шт", min_threshold=2),
+            ]
+            session.add_all(default_items)
+            await session.commit()
+            for item in default_items:
+                await session.refresh(item)
+            items = default_items
+
+    return [{"id": i.id, "name": i.name, "quantity": i.quantity, "unit": i.unit, "min_threshold": i.min_threshold} for i in items]
+
+class InventoryUpdateRequest(BaseModel):
+    quantity: float
+
+@app.post("/api/inventory/{item_id}")
+async def update_inventory(item_id: int, req: InventoryUpdateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+    
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        item = await session.get(InventoryItem, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        item.quantity = req.quantity
+        await session.commit()
+    return {"status": "ok"}
+
 class ResetRequest(BaseModel):
     reset_type: str  # "all", "fuel_zero", "hours_zero", "maint_main", "maint_intermediate"
     reason: str

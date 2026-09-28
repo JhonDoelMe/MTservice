@@ -135,3 +135,12 @@ class AuditResetLog(Base):
     user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     user_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+class InventoryItem(Base):
+    __tablename__ = 'inventory_items'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str] = mapped_column(String(50), default='HB')
+    min_threshold: Mapped[float] = mapped_column(Float, default=1.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

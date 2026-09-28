@@ -426,6 +426,16 @@
 
       <div class="card">
         <div class="card-header">
+          <span class="card-title">📦 Склад розхідників</span>
+          <button class="btn-mini" onclick="loadInventory()">Оновити</button>
+        </div>
+        <div id="inventoryList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
           <span class="card-title">Користувачі та доступ</span>
           <span style="font-size: 11px; color: var(--hint-color);" id="usersCountBadge">Диспетчери</span>
         </div>

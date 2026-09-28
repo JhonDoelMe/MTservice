@@ -350,7 +350,10 @@ function switchTab(tabId, btn) {
   if (tabId === "tabFuel") loadFuelHistory();
   if (tabId === "tabMaint") loadMaintHistory();
   if (tabId === "tabReports") loadReports();
-  if (tabId === "tabSettings") loadUsers();
+  if (tabId === "tabSettings") {
+    loadUsers();
+    loadInventory();
+  }
 }
 
 // Modal open/close
@@ -901,6 +904,57 @@ async function loadUsers() {
     loadAuditLogs();
   } catch (e) {
     container.innerHTML = '<div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 12px;">Немає доступу до списку користувачів</div>';
+  }
+}
+
+async function loadInventory() {
+  const container = document.getElementById("inventoryList");
+  if (!container) return;
+  try {
+    const items = await apiCall("/api/inventory");
+    if (!items || items.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--hint-color); padding: 10px;">Склад порожній</div>';
+      return;
+    }
+    const isAdmin = currentStatus?.current_user?.role === 'admin';
+    
+    container.innerHTML = items.map(item => {
+      const isLow = item.quantity <= item.min_threshold;
+      return `
+        <div class="list-item" style="align-items: center;">
+          <div style="flex: 1;">
+            <div class="list-item-title">${item.name}</div>
+            <div class="list-item-sub" style="color: ${isLow ? 'var(--accent-red)' : 'var(--hint-color)'};">
+              Мінімум: ${item.min_threshold} ${item.unit} ${isLow ? '⚠️ Закінчується!' : ''}
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: bold; font-size: 16px;">${item.quantity} ${item.unit}</span>
+            ${isAdmin ? `<button class="btn-mini" onclick="editInventory(${item.id}, '${item.name}', ${item.quantity})">✏️</button>` : ''}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    container.innerHTML = '<div style="color: var(--accent-red); text-align: center; padding: 10px;">Помилка завантаження</div>';
+  }
+}
+
+async function editInventory(id, name, currentQty) {
+  const qty = prompt(`Редагування: ${name}\nВведіть нову кількість:`, currentQty);
+  if (qty === null) return;
+  const num = parseFloat(qty);
+  if (isNaN(num) || num < 0) {
+    alert("Невірне число!");
+    return;
+  }
+  
+  try {
+    await apiCall(`/api/inventory/${id}`, "POST", { quantity: num });
+    tg.showAlert("Збережено!");
+    loadInventory();
+  } catch (e) {
+    tg.showAlert("Помилка збереження");
   }
 }
 
