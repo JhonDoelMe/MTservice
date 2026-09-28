@@ -9,6 +9,31 @@ if (tg) {
   }
 }
 
+// Theme handling
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme'); // Auto (Telegram/System fallback)
+  }
+}
+
+function changeTheme() {
+  const theme = document.getElementById("themeSelect").value;
+  localStorage.setItem("appTheme", theme);
+  applyTheme(theme);
+}
+
+// Init theme on boot
+const savedTheme = localStorage.getItem("appTheme") || "auto";
+applyTheme(savedTheme);
+document.addEventListener("DOMContentLoaded", () => {
+  const sel = document.getElementById("themeSelect");
+  if (sel) sel.value = savedTheme;
+});
+
 // State
 let currentStatus = null;
 let liveTimerInterval = null;
@@ -325,7 +350,10 @@ function switchTab(tabId, btn) {
   if (tabId === "tabFuel") loadFuelHistory();
   if (tabId === "tabMaint") loadMaintHistory();
   if (tabId === "tabReports") loadReports();
-  if (tabId === "tabSettings") loadUsers();
+  if (tabId === "tabSettings") {
+    loadUsers();
+    loadInventory();
+  }
 }
 
 // Modal open/close
@@ -638,6 +666,73 @@ async function loadMaintHistory() {
   }
 }
 
+let fuelChartInstance = null;
+
+function renderFuelChart(data) {
+  const ctx = document.getElementById('fuelChart');
+  if (!ctx) return;
+  
+  if (fuelChartInstance) {
+    fuelChartInstance.destroy();
+  }
+  
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#0f172a';
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--card-border').trim() || 'rgba(0,0,0,0.05)';
+
+  fuelChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: [
+        {
+          label: 'Витрата (л)',
+          data: data.fuel,
+          backgroundColor: 'rgba(239, 68, 68, 0.8)',
+          borderRadius: 4,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Робота (год)',
+          data: data.hours,
+          backgroundColor: 'rgba(2, 132, 199, 0.8)',
+          borderRadius: 4,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      color: textColor,
+      plugins: {
+        legend: {
+          labels: { color: textColor, boxWidth: 12 }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: textColor }
+        },
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          grid: { color: gridColor },
+          ticks: { color: textColor }
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: textColor }
+        }
+      }
+    }
+  });
+}
+
 async function loadReports() {
   try {
     const summary = await apiCall("/api/reports/summary");
@@ -649,6 +744,14 @@ async function loadReports() {
 
     document.getElementById("repMonthHours").innerText = summary.month_duration_str;
     document.getElementById("repMonthFuel").innerText = `${summary.month_fuel} л`;
+
+    // Render Chart
+    try {
+      const chartData = await apiCall("/api/reports/chart-data?days=7");
+      renderFuelChart(chartData);
+    } catch (e) {
+      console.error("Chart error:", e);
+    }
 
     const runsList = await apiCall("/api/reports/runs");
     const container = document.getElementById("runsHistoryList");
@@ -801,6 +904,57 @@ async function loadUsers() {
     loadAuditLogs();
   } catch (e) {
     container.innerHTML = '<div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 12px;">Немає доступу до списку користувачів</div>';
+  }
+}
+
+async function loadInventory() {
+  const container = document.getElementById("inventoryList");
+  if (!container) return;
+  try {
+    const items = await apiCall("/api/inventory");
+    if (!items || items.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--hint-color); padding: 10px;">Склад порожній</div>';
+      return;
+    }
+    const isAdmin = currentStatus?.current_user?.role === 'admin';
+    
+    container.innerHTML = items.map(item => {
+      const isLow = item.quantity <= item.min_threshold;
+      return `
+        <div class="list-item" style="align-items: center;">
+          <div style="flex: 1;">
+            <div class="list-item-title">${item.name}</div>
+            <div class="list-item-sub" style="color: ${isLow ? 'var(--accent-red)' : 'var(--hint-color)'};">
+              Мінімум: ${item.min_threshold} ${item.unit} ${isLow ? '⚠️ Закінчується!' : ''}
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: bold; font-size: 16px;">${item.quantity} ${item.unit}</span>
+            ${isAdmin ? `<button class="btn-mini" onclick="editInventory(${item.id}, '${item.name}', ${item.quantity})">✏️</button>` : ''}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    container.innerHTML = '<div style="color: var(--accent-red); text-align: center; padding: 10px;">Помилка завантаження</div>';
+  }
+}
+
+async function editInventory(id, name, currentQty) {
+  const qty = prompt(`Редагування: ${name}\nВведіть нову кількість:`, currentQty);
+  if (qty === null) return;
+  const num = parseFloat(qty);
+  if (isNaN(num) || num < 0) {
+    alert("Невірне число!");
+    return;
+  }
+  
+  try {
+    await apiCall(`/api/inventory/${id}`, "POST", { quantity: num });
+    tg.showAlert("Збережено!");
+    loadInventory();
+  } catch (e) {
+    tg.showAlert("Помилка збереження");
   }
 }
 

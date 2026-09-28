@@ -23,6 +23,34 @@ from bot.services.generator_service import (
 )
 from bot.services.excel_service import ExcelService
 from bot.handlers.generator import parse_time_input
+from aiogram import Bot
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def notify_all_operators(message: str, exclude_user_id: Optional[int] = None):
+    if not settings.BOT_TOKEN or settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE" or settings.BOT_TOKEN.startswith("1234567890"):
+        return
+    bot = Bot(token=settings.BOT_TOKEN)
+    try:
+        session_maker = get_session_maker()
+        async with session_maker() as session:
+            users_res = await session.execute(
+                select(User).where(User.role.in_(["admin", "operator"]))
+            )
+            notify_users = users_res.scalars().all()
+        for u in notify_users:
+            if exclude_user_id and u.user_id == exclude_user_id:
+                continue
+            try:
+                await bot.send_message(chat_id=u.user_id, text=message, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Notify error: {e}")
+    finally:
+        await bot.session.close()
 
 app = FastAPI(title="MTservice Generator TMA Backend")
 
@@ -235,6 +263,13 @@ async def start_generator(req: StartRequest, current_user: Dict[str, Any] = Depe
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
+    asyncio.create_task(notify_all_operators(
+        f"⚡ <b>Генератор ЗАПУЩЕНО!</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"🕒 Час: {datetime.now(get_local_tz()).strftime('%H:%M')}",
+        exclude_user_id=current_user["user_id"]
+    ))
+
     return {"status": "ok", "message": msg, "data": data}
 
 
@@ -264,6 +299,14 @@ async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depend
 
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+
+    asyncio.create_task(notify_all_operators(
+        f"⏹ <b>Генератор ЗУПИНЕНО!</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"🕒 Час: {datetime.now(get_local_tz()).strftime('%H:%M')}\n"
+        f"⛽ Залишок: <code>{data.get('current_fuel', 0):.1f} л</code>",
+        exclude_user_id=current_user["user_id"]
+    ))
 
     return {"status": "ok", "message": msg, "data": data}
 
@@ -296,6 +339,14 @@ async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(ge
 
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+
+    asyncio.create_task(notify_all_operators(
+        f"⛽ <b>ЗАПРАВКА ГЕНЕРАТОРА!</b>\n"
+        f"➕ Додано: <b>{req.amount_liters:.1f} л</b>\n"
+        f"👤 Диспетчер: <b>{current_user['user_name']}</b>\n"
+        f"📈 Новий залишок: <code>{data.get('current_fuel', 0):.1f} л</code>",
+        exclude_user_id=current_user["user_id"]
+    ))
 
     return {"status": "ok", "message": msg, "data": data}
 
@@ -388,6 +439,43 @@ async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current
         "month_fuel": round(month_fuel_burned, 1),
     }
 
+
+@app.get("/api/reports/chart-data")
+async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(get_current_user)):
+    local_tz = get_local_tz()
+    now_local = datetime.now(local_tz)
+    start_date_local = (now_local - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date_utc = start_date_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        runs_res = await session.execute(
+            select(RunLog).where(RunLog.stop_time >= start_date_utc)
+        )
+        runs = runs_res.scalars().all()
+
+    # Aggregate by local date string "DD.MM"
+    daily_data = {}
+    for i in range(days):
+        d = start_date_local + timedelta(days=i)
+        daily_data[d.strftime("%d.%m")] = {"hours": 0.0, "fuel": 0.0}
+
+    for r in runs:
+        local_stop = r.stop_time.replace(tzinfo=timezone.utc).astimezone(local_tz)
+        d_str = local_stop.strftime("%d.%m")
+        if d_str in daily_data:
+            daily_data[d_str]["hours"] += r.duration_hours
+            daily_data[d_str]["fuel"] += r.fuel_consumed
+
+    labels = list(daily_data.keys())
+    fuel_data = [round(daily_data[k]["fuel"], 1) for k in labels]
+    hours_data = [round(daily_data[k]["hours"], 1) for k in labels]
+
+    return {
+        "labels": labels,
+        "fuel": fuel_data,
+        "hours": hours_data
+    }
 
 @app.get("/api/reports/runs")
 async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -533,6 +621,49 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
 
     return {"status": "ok", "message": "Параметри оновлено"}
 
+
+from bot.database.models import InventoryItem
+
+@app.get("/api/inventory")
+async def get_inventory(current_user: Dict[str, Any] = Depends(get_current_user)):
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        res = await session.execute(select(InventoryItem).order_by(InventoryItem.id))
+        items = res.scalars().all()
+        # Seed default items if empty
+        if not items:
+            default_items = [
+                InventoryItem(name="Олива 10w40 (1л)", quantity=0, unit="шт", min_threshold=2),
+                InventoryItem(name="Фільтр масляний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Фільтр повітряний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Фільтр паливний", quantity=0, unit="шт", min_threshold=1),
+                InventoryItem(name="Свічка запалювання", quantity=0, unit="шт", min_threshold=2),
+            ]
+            session.add_all(default_items)
+            await session.commit()
+            for item in default_items:
+                await session.refresh(item)
+            items = default_items
+
+    return [{"id": i.id, "name": i.name, "quantity": i.quantity, "unit": i.unit, "min_threshold": i.min_threshold} for i in items]
+
+class InventoryUpdateRequest(BaseModel):
+    quantity: float
+
+@app.post("/api/inventory/{item_id}")
+async def update_inventory(item_id: int, req: InventoryUpdateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+    
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        item = await session.get(InventoryItem, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        item.quantity = req.quantity
+        await session.commit()
+    return {"status": "ok"}
 
 class ResetRequest(BaseModel):
     reset_type: str  # "all", "fuel_zero", "hours_zero", "maint_main", "maint_intermediate"
