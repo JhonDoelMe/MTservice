@@ -50,8 +50,10 @@
   <header class="app-header">
     <div class="brand">
       <span class="brand-icon">⚡</span>
-      <div>
-        <div class="brand-title" id="genName">Основний ДГУ</div>
+      <div style="display: flex; flex-direction: column;">
+        <select id="globalGenSelect" onchange="switchGenerator()" style="background: transparent; color: var(--text-color); border: none; font-size: 16px; font-weight: 700; outline: none; appearance: none; -webkit-appearance: none; cursor: pointer; padding: 0;">
+          <option value="1">Основний ДГУ</option>
+        </select>
         <div class="brand-subtitle" id="userRoleBadge">Диспетчерська</div>
       </div>
     </div>
@@ -347,6 +349,19 @@
             </button>
           </div>
         </div>
+      </div>
+
+
+      <div class="card admin-only" style="display: none;">
+        <div class="card-header">
+          <span class="card-title">🏢 Управління об'єктами</span>
+        </div>
+        <div style="font-size: 13px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
+          Додайте новий генератор або об'єкт. Після створення ви зможете перемикатися між ними у шапці додатку.
+        </div>
+        <button class="btn-primary" style="width: 100%; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="openWizardModal()">
+          ➕ Додати новий об'єкт/генератор
+        </button>
       </div>
 
       <div class="card">

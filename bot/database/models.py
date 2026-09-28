@@ -54,6 +54,8 @@ class RunLog(Base):
     __tablename__ = "run_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     stop_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     duration_hours: Mapped[float] = mapped_column(Float, nullable=False)
@@ -76,6 +78,8 @@ class FuelLog(Base):
     __tablename__ = "fuel_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     amount_liters: Mapped[float] = mapped_column(Float, nullable=False)
     fuel_before: Mapped[float] = mapped_column(Float, nullable=False)
@@ -92,6 +96,8 @@ class MaintenanceLog(Base):
     __tablename__ = "maintenance_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     hours_at_maintenance: Mapped[float] = mapped_column(Float, nullable=False)
     next_maintenance_hours: Mapped[float] = mapped_column(Float, nullable=False)
@@ -132,6 +138,7 @@ class AuditResetLog(Base):
     __tablename__ = "audit_reset_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     reset_type: Mapped[str] = mapped_column(String(100), nullable=False)  # "all", "fuel_zero", "hours_zero", "maint_main", "maint_intermediate"
     reason: Mapped[str] = mapped_column(Text, nullable=False)
@@ -142,6 +149,7 @@ class AuditResetLog(Base):
 class InventoryItem(Base):
     __tablename__ = 'inventory_items'
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     quantity: Mapped[float] = mapped_column(Float, default=0.0)
     unit: Mapped[str] = mapped_column(String(50), default='HB')

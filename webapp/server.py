@@ -6,7 +6,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, Request, HTTPException, Depends, Header
+from fastapi import Query, FastAPI, Request, HTTPException, Depends, Header
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -230,10 +230,10 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 
 @app.get("/api/status")
-async def get_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_status(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        data = await GeneratorService.get_dashboard_data(session)
+        data = await GeneratorService.get_dashboard_data(session, gen_id)
     data["current_user"] = current_user
     return data
 
@@ -243,7 +243,7 @@ class StartRequest(BaseModel):
 
 
 @app.post("/api/generator/start")
-async def start_generator(req: StartRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def start_generator(req: StartRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     custom_dt = None
     if req.custom_time and req.custom_time.strip() and req.custom_time.strip().lower() != "зараз":
         try:
@@ -279,7 +279,7 @@ class StopRequest(BaseModel):
 
 
 @app.post("/api/generator/stop")
-async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     custom_dt = None
     if req.custom_time and req.custom_time.strip() and req.custom_time.strip().lower() != "зараз":
         try:
@@ -320,7 +320,7 @@ class RefuelRequest(BaseModel):
 
 
 @app.post("/api/fuel/add")
-async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     if req.amount_liters <= 0:
         raise HTTPException(status_code=400, detail="Об'єм заправки повинен бути більше 0")
 
@@ -604,7 +604,7 @@ class AdminSettingsRequest(BaseModel):
     auto_update_price: Optional[bool] = None
 
 @app.post("/api/admin/settings")
-async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     if not current_user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
 
@@ -621,7 +621,8 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
             maintenance_interval=req.maintenance_interval,
             fuel_type=req.fuel_type,
             fuel_price=req.fuel_price,
-            auto_update_price=req.auto_update_price
+            auto_update_price=req.auto_update_price,
+            gen_id=gen_id
         )
 
     return {"status": "ok", "message": "Параметри оновлено"}
@@ -676,7 +677,7 @@ class ResetRequest(BaseModel):
 
 
 @app.post("/api/admin/reset")
-async def reset_counters(req: ResetRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def reset_counters(req: ResetRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     if not current_user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
 
@@ -761,3 +762,41 @@ async def set_user_custom_name(req: UserCustomNameRequest, current_user: Dict[st
         await session.commit()
 
     return {"status": "ok", "message": "Системне ім'я користувача оновлено"}
+
+class CreateGeneratorRequest(BaseModel):
+    name: str
+    fuel_type: str = "ДП"
+    tank_capacity: float = 150.0
+    current_fuel: float = 0.0
+    total_hours: float = 0.0
+    maintenance_interval: float = 250.0
+    fuel_rate: float = 4.5
+
+@app.get("/api/generators")
+async def get_generators(current_user: dict = Depends(get_current_user)):
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        res = await session.execute(select(GeneratorState))
+        gens = res.scalars().all()
+        return [{"id": g.id, "name": g.name, "is_running": g.is_running} for g in gens]
+
+@app.post("/api/generators")
+async def create_generator(req: CreateGeneratorRequest, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Тільки адмін може додавати об'єкти")
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        new_gen = GeneratorState(
+            name=req.name,
+            fuel_type=req.fuel_type,
+            tank_capacity=req.tank_capacity,
+            current_fuel=req.current_fuel,
+            total_hours=req.total_hours,
+            maintenance_interval_hours=req.maintenance_interval,
+            fuel_rate=req.fuel_rate,
+            last_maintenance_hours=req.total_hours
+        )
+        session.add(new_gen)
+        await session.commit()
+        await session.refresh(new_gen)
+        return {"status": "ok", "id": new_gen.id}
