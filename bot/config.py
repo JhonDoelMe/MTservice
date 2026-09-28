@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     MAINTENANCE_INTERVAL_HOURS: float = 250.0  # мотогодин між ТО
     MAINTENANCE_WARNING_HOURS: float = 20.0    # попереджати за 20 мч
 
+    # Графік дозволеної роботи генератора (Київський час)
+    WORK_HOURS_ENABLED: bool = True
+    WORK_START_TIME: str = "08:00"
+    WORK_END_TIME: str = "20:00"
+
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
     def parse_admin_ids(cls, v):
