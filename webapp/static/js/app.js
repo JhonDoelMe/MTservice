@@ -332,19 +332,28 @@ async function loadStatus() {
     const ffEl = document.getElementById("fuelFilterAgoText");
     if (ffEl) ffEl.innerText = `${(data.fuel_filter_hours_ago || 0).toFixed(1)} мч тому`;
 
-    // Tab 5 Settings sync placeholders & profile
-    document.getElementById("calibHoursInput").placeholder = data.base_total_hours;
-    document.getElementById("calibFuelInput").placeholder = data.current_fuel;
-    document.getElementById("calibRateInput").placeholder = data.fuel_rate;
-    document.getElementById("calibTankInput").placeholder = data.tank_capacity;
-    document.getElementById("calibIntervalInput").placeholder = data.maintenance_interval_hours;
+        // Tab 5 Settings sync inputs & profile
+    const setIfInactive = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.placeholder = (val !== undefined && val !== null) ? val : "";
+        if (document.activeElement !== el && (el.value === "" || el.value === undefined)) {
+          el.value = (val !== undefined && val !== null) ? val : "";
+        }
+      }
+    };
+    setIfInactive("calibHoursInput", data.base_total_hours);
+    setIfInactive("calibFuelInput", data.current_fuel);
+    setIfInactive("calibRateInput", data.fuel_rate);
+    setIfInactive("calibTankInput", data.tank_capacity);
+    setIfInactive("calibIntervalInput", data.maintenance_interval_hours);
 
     if (document.getElementById("calibFuelTypeInput") && document.activeElement !== document.getElementById("calibFuelTypeInput")) {
       document.getElementById("calibFuelTypeInput").value = data.fuel_type || "ДП";
     }
-    document.getElementById("calibFuelPriceInput").placeholder = data.fuel_price ? data.fuel_price.toFixed(2) : "";
+    setIfInactive("calibFuelPriceInput", data.fuel_price ? data.fuel_price.toFixed(2) : "");
     if (document.getElementById("calibAutoPriceInput")) {
-      document.getElementById("calibAutoPriceInput").checked = data.auto_update_price;
+      document.getElementById("calibAutoPriceInput").checked = Boolean(data.auto_update_price);
     }
 
     if (data.current_user) {
@@ -356,6 +365,12 @@ async function loadStatus() {
       if (myRoleBadge) {
         myRoleBadge.innerText = data.current_user.is_admin ? "👑 Адміністратор" : "👤 Оператор";
       }
+
+      // Toggle admin-only sections
+      const isAdmin = Boolean(data.current_user.is_admin || data.current_user.role === 'admin');
+      document.querySelectorAll(".admin-only").forEach(el => {
+        el.style.display = isAdmin ? "" : "none";
+      });
     }
 
   } catch (e) {
@@ -545,14 +560,10 @@ function openResetModal() {
 
 async function submitResetCounters() {
   const resetType = document.getElementById("resetTypeSelect").value;
-  const reason = document.getElementById("resetReasonInput").value.trim();
+  const reasonInput = document.getElementById("resetReasonInput");
+  const reason = (reasonInput ? reasonInput.value.trim() : "") || "Скидання адміністратором";
 
-  if (!reason || reason.length < 5) {
-    alert("Вкажіть обов'язково причину скидання (мінімум 5 символів)!");
-    return;
-  }
-
-  const confirmMsg = "УВАГА: Ця дія скине вибрані лічильники і буде збережена в журналі безпеки з вашим ім'ям. Продовжити?";
+  const confirmMsg = "УВАГА: Ця дія скине вибрані показники генератора. Продовжити?";
   if (!confirm(confirmMsg)) return;
 
   closeModal("resetModal");
@@ -564,7 +575,7 @@ async function submitResetCounters() {
       reason: reason
     });
     haptic("success");
-    alert(res.message || "Скидання виконано!");
+    showToast(res.message || "Скидання виконано!");
     await loadStatus();
     loadAuditLogs();
   } catch (err) {
@@ -833,32 +844,37 @@ function downloadExcelReport() {
 
 // Admin settings handlers
 async function saveCalibHours() {
-  const val = parseFloat(document.getElementById("calibHoursInput").value);
-  if (isNaN(val) || val < 0) return alert("Вкажіть число!");
+  const raw = document.getElementById("calibHoursInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val < 0) return alert("Будь ласка, введіть коректне число!");
   await saveAdminSetting({ total_hours: val });
 }
 
 async function saveCalibFuel() {
-  const val = parseFloat(document.getElementById("calibFuelInput").value);
-  if (isNaN(val) || val < 0) return alert("Вкажіть число!");
+  const raw = document.getElementById("calibFuelInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val < 0) return alert("Будь ласка, введіть коректне число!");
   await saveAdminSetting({ current_fuel: val });
 }
 
 async function saveCalibRate() {
-  const val = parseFloat(document.getElementById("calibRateInput").value);
-  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  const raw = document.getElementById("calibRateInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val <= 0) return alert("Норма повинна бути більша за 0!");
   await saveAdminSetting({ fuel_rate: val });
 }
 
 async function saveCalibTank() {
-  const val = parseFloat(document.getElementById("calibTankInput").value);
-  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  const raw = document.getElementById("calibTankInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val <= 0) return alert("Об'єм бака повинен бути більший за 0!");
   await saveAdminSetting({ tank_capacity: val });
 }
 
 async function saveCalibInterval() {
-  const val = parseFloat(document.getElementById("calibIntervalInput").value);
-  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  const raw = document.getElementById("calibIntervalInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val <= 0) return alert("Інтервал повинен бути більший за 0!");
   await saveAdminSetting({ maintenance_interval: val });
 }
 
@@ -869,8 +885,9 @@ async function saveCalibFuelType() {
 }
 
 async function saveCalibFuelPrice() {
-  const val = parseFloat(document.getElementById("calibFuelPriceInput").value);
-  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  const raw = document.getElementById("calibFuelPriceInput").value.replace(',', '.').trim();
+  const val = parseFloat(raw);
+  if (isNaN(val) || val <= 0) return alert("Ціна повинна бути більша за 0!");
   await saveAdminSetting({ fuel_price: val });
 }
 
@@ -884,7 +901,7 @@ async function saveAdminSetting(payload) {
   try {
     await apiCall("/api/admin/settings", "POST", payload);
     haptic("success");
-    alert("Параметр успішно збережено!");
+    showToast("Параметр успішно збережено!");
     await loadStatus();
   } catch (e) {
     haptic("error");
@@ -1205,3 +1222,62 @@ async function submitWizard() {
 document.addEventListener("DOMContentLoaded", () => {
   loadGeneratorsList();
 });
+
+
+// --- INITIAL SETUP / FACTORY RESET ---
+
+function openInitialSetupModal() {
+  if (currentStatus) {
+    document.getElementById("setupGenName").value = currentStatus.name || "Основний ДГУ";
+    document.getElementById("setupFuelType").value = currentStatus.fuel_type || "ДП";
+    document.getElementById("setupTankCapacity").value = currentStatus.tank_capacity || 150;
+    document.getElementById("setupFuelRate").value = currentStatus.fuel_rate || 4.5;
+    document.getElementById("setupTotalHours").value = currentStatus.total_hours || 0;
+    document.getElementById("setupCurrentFuel").value = currentStatus.current_fuel || 100;
+    document.getElementById("setupMaintInterval").value = currentStatus.maintenance_interval_hours || 250;
+  }
+  document.getElementById("setupWipeLogs").checked = true;
+  openModal("initialSetupModal");
+}
+
+async function submitInitialSetup() {
+  const name = document.getElementById("setupGenName").value.trim();
+  if (!name) return alert("Вкажіть назву об'єкта або генератора!");
+
+  const fType = document.getElementById("setupFuelType").value;
+  const tank = parseFloat(document.getElementById("setupTankCapacity").value.replace(',', '.')) || 150.0;
+  const rate = parseFloat(document.getElementById("setupFuelRate").value.replace(',', '.')) || 4.5;
+  const hours = parseFloat(document.getElementById("setupTotalHours").value.replace(',', '.')) || 0.0;
+  const fuel = parseFloat(document.getElementById("setupCurrentFuel").value.replace(',', '.')) || 0.0;
+  const maint = parseFloat(document.getElementById("setupMaintInterval").value.replace(',', '.')) || 250.0;
+  const wipe = document.getElementById("setupWipeLogs").checked;
+
+  const confirmMsg = wipe 
+    ? "УВАГА: Буде скинуто всі старі звіти, логи та заправки для цього об'єкта, і встановлено нові початкові параметри. Продовжити?"
+    : "Встановити нові початкові параметри для цього генератора?";
+  if (!confirm(confirmMsg)) return;
+
+  closeModal("initialSetupModal");
+  haptic("heavy");
+
+  try {
+    const body = {
+      name: name,
+      fuel_type: fType,
+      tank_capacity: tank,
+      fuel_rate: rate,
+      total_hours: hours,
+      current_fuel: fuel,
+      maintenance_interval: maint,
+      wipe_history: wipe
+    };
+    const res = await apiCall("/api/generator/initial-setup", "POST", body);
+    haptic("success");
+    showToast(res.message || "Початкові налаштування збережено!");
+    await loadGeneratorsList();
+    await loadStatus();
+  } catch (e) {
+    haptic("error");
+    alert(e.message);
+  }
+}

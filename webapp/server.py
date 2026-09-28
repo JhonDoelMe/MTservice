@@ -390,7 +390,7 @@ async def perform_maint(req: MaintenanceRequest, current_user: Dict[str, Any] = 
 # --- REPORTS & LISTS ---
 
 @app.get("/api/reports/summary")
-async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     local_tz = get_local_tz()
     now_local = datetime.now(local_tz)
 
@@ -403,22 +403,22 @@ async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current
     session_maker = get_session_maker()
     async with session_maker() as session:
         today_runs_res = await session.execute(
-            select(RunLog).where(RunLog.stop_time >= start_of_day_utc)
+            select(RunLog).where(RunLog.generator_id == gen_id, RunLog.stop_time >= start_of_day_utc)
         )
         today_runs = today_runs_res.scalars().all()
 
         today_fuel_res = await session.execute(
-            select(FuelLog).where(FuelLog.timestamp >= start_of_day_utc)
+            select(FuelLog).where(FuelLog.generator_id == gen_id, FuelLog.timestamp >= start_of_day_utc)
         )
         today_fuels = today_fuel_res.scalars().all()
 
         month_runs_res = await session.execute(
-            select(RunLog).where(RunLog.stop_time >= start_of_month_utc)
+            select(RunLog).where(RunLog.generator_id == gen_id, RunLog.stop_time >= start_of_month_utc)
         )
         month_runs = month_runs_res.scalars().all()
 
         month_fuel_res = await session.execute(
-            select(FuelLog).where(FuelLog.timestamp >= start_of_month_utc)
+            select(FuelLog).where(FuelLog.generator_id == gen_id, FuelLog.timestamp >= start_of_month_utc)
         )
         month_fuels = month_fuel_res.scalars().all()
 
@@ -443,7 +443,7 @@ async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current
 
 
 @app.get("/api/reports/chart-data")
-async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     local_tz = get_local_tz()
     now_local = datetime.now(local_tz)
     start_date_local = (now_local - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -452,7 +452,7 @@ async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(g
     session_maker = get_session_maker()
     async with session_maker() as session:
         runs_res = await session.execute(
-            select(RunLog).where(RunLog.stop_time >= start_date_utc)
+            select(RunLog).where(RunLog.generator_id == gen_id, RunLog.stop_time >= start_date_utc)
         )
         runs = runs_res.scalars().all()
 
@@ -480,10 +480,10 @@ async def get_chart_data(days: int = 7, current_user: Dict[str, Any] = Depends(g
     }
 
 @app.get("/api/reports/runs")
-async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        res = await session.execute(select(RunLog).order_by(RunLog.id.desc()).limit(15))
+        res = await session.execute(select(RunLog).where(RunLog.generator_id == gen_id).order_by(RunLog.id.desc()).limit(15))
         runs = res.scalars().all()
 
     return [
@@ -506,10 +506,10 @@ async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_use
 
 
 @app.get("/api/reports/fuel")
-async def get_recent_fuel(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_recent_fuel(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        res = await session.execute(select(FuelLog).order_by(FuelLog.id.desc()).limit(15))
+        res = await session.execute(select(FuelLog).where(FuelLog.generator_id == gen_id).order_by(FuelLog.id.desc()).limit(15))
         fuels = res.scalars().all()
 
     return [
@@ -531,10 +531,10 @@ async def get_recent_fuel(current_user: Dict[str, Any] = Depends(get_current_use
 
 
 @app.get("/api/reports/maintenance")
-async def get_recent_maintenance(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_recent_maintenance(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        res = await session.execute(select(MaintenanceLog).order_by(MaintenanceLog.id.desc()).limit(15))
+        res = await session.execute(select(MaintenanceLog).where(MaintenanceLog.generator_id == gen_id).order_by(MaintenanceLog.id.desc()).limit(15))
         maints = res.scalars().all()
 
     return [
@@ -557,13 +557,13 @@ async def get_recent_maintenance(current_user: Dict[str, Any] = Depends(get_curr
 
 
 @app.get("/api/reports/audit")
-async def get_audit_logs(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_audit_logs(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     if not current_user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Доступ заборонено")
 
     session_maker = get_session_maker()
     async with session_maker() as session:
-        res = await session.execute(select(AuditResetLog).order_by(AuditResetLog.id.desc()).limit(20))
+        res = await session.execute(select(AuditResetLog).where(AuditResetLog.generator_id == gen_id).order_by(AuditResetLog.id.desc()).limit(20))
         audits = res.scalars().all()
 
     return [
@@ -580,10 +580,10 @@ async def get_audit_logs(current_user: Dict[str, Any] = Depends(get_current_user
 
 
 @app.get("/api/reports/excel")
-async def export_excel(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def export_excel(current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        stream = await ExcelService.generate_full_report(session)
+        stream = await ExcelService.generate_full_report(session, gen_id=gen_id)
 
     filename = f"generator_report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
@@ -690,7 +690,7 @@ async def reset_counters(req: ResetRequest, current_user: Dict[str, Any] = Depen
             user_id=current_user["user_id"],
             user_name=current_user["user_name"],
             reset_type=req.reset_type,
-            reason=req.reason
+            reason=req.reason or "Скидання адміністратором"
         ,
             gen_id=gen_id
         )
@@ -804,3 +804,59 @@ async def create_generator(req: CreateGeneratorRequest, current_user: dict = Dep
         await session.commit()
         await session.refresh(new_gen)
         return {"status": "ok", "id": new_gen.id}
+
+
+class InitialSetupRequest(BaseModel):
+    name: str
+    fuel_type: str = "ДП"
+    tank_capacity: float = 150.0
+    current_fuel: float = 0.0
+    total_hours: float = 0.0
+    fuel_rate: float = 4.5
+    maintenance_interval: float = 250.0
+    wipe_history: bool = True
+
+@app.post("/api/generator/initial-setup")
+async def initial_setup_generator(req: InitialSetupRequest, current_user: Dict[str, Any] = Depends(get_current_user), gen_id: int = Query(1)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        gen = await GeneratorService.get_state(session, gen_id)
+        if not gen:
+            raise HTTPException(status_code=404, detail="Генератор не знайдено")
+        
+        gen.name = req.name.strip()
+        gen.fuel_type = req.fuel_type
+        gen.tank_capacity = req.tank_capacity
+        gen.fuel_rate = req.fuel_rate
+        gen.total_hours = req.total_hours
+        gen.current_fuel = req.current_fuel
+        gen.maintenance_interval_hours = req.maintenance_interval
+        gen.last_maintenance_hours = req.total_hours
+        gen.is_running = False
+        gen.current_start_time = None
+        gen.current_start_user_id = None
+        gen.current_start_user_name = None
+        gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        if req.wipe_history:
+            from sqlalchemy import delete
+            await session.execute(delete(RunLog).where(RunLog.generator_id == gen_id))
+            await session.execute(delete(FuelLog).where(FuelLog.generator_id == gen_id))
+            await session.execute(delete(MaintenanceLog).where(MaintenanceLog.generator_id == gen_id))
+
+        audit = AuditResetLog(
+            generator_id=gen_id,
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
+            reset_type="initial_setup",
+            reason="Початкові налаштування / переналаштування об'єкта",
+            user_id=current_user["user_id"],
+            user_name=current_user["user_name"],
+            details=f"Встановлено: {req.name}, бак {req.tank_capacity}л, години {req.total_hours}, очищення історії: {req.wipe_history}"
+        )
+        session.add(audit)
+        await session.commit()
+        await session.refresh(gen)
+        await cache.delete(f"generator:{gen_id}:dashboard")
+        return {"status": "ok", "message": "Початкові налаштування успішно застосовано"}

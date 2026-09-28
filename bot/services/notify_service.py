@@ -17,21 +17,27 @@ async def fetch_minfin_fuel_price(fuel_type: str) -> float:
     """Парсить ціну палива з Мінфіну (Дніпропетровська область)."""
     try:
         url = "https://index.minfin.com.ua/markets/fuel/reg/dnepropetrovskaya/"
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             html = resp.text
-            
-            # fuel_type: "ДП", "А-95", "А-92", "Газ"
-            search_type = fuel_type.replace("Бензин ", "")
-            # Знаходимо рядок з цим паливом
-            # На Мінфіні зазвичай `<td>ДП</td><td class="num">52,40</td>` або схоже
-            match = re.search(rf'<td>{re.escape(search_type)}</td>.*?<td[^>]*>([\d,\.]+)</td>', html, re.IGNORECASE | re.DOTALL)
-            if match:
-                price_str = match.group(1).replace(',', '.')
-                return float(price_str)
-            else:
-                logger.warning(f"Minfin scraper: {search_type} not found in HTML.")
+
+            matches = re.findall(r'<td[^>]*align=[\'\"]left[\'\"][^>]*>([\s\S]*?)</td>\s*<td[^>]*align=[\'\"]right[\'\"][^>]*>\s*<big>([\d,\.]+)</big>', html)
+            target = (fuel_type or "").lower()
+            for td, big in matches:
+                clean_td = re.sub(r'<[^>]+>', '', td).strip().lower()
+                price = float(big.replace(',', '.'))
+                if ("дп" in target or "диз" in target) and ("дизел" in clean_td or "дп" in clean_td):
+                    return price
+                elif "95" in target and "95" in clean_td and "прем" not in clean_td:
+                    return price
+                elif "92" in target and "92" in clean_td:
+                    return price
+                elif "газ" in target and "газ" in clean_td:
+                    return price
+
+            logger.warning(f"Minfin scraper: {fuel_type} not matched in table.")
     except Exception as e:
         logger.error(f"Minfin scraper error: {e}")
     return 0.0

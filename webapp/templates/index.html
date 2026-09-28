@@ -352,32 +352,20 @@
       </div>
 
 
-      <div class="card admin-only" style="display: none;">
+            <div class="card admin-only" id="adminObjectsCard">
         <div class="card-header">
-          <span class="card-title">🏢 Управління об'єктами</span>
+          <span class="card-title">🏢 Об'єкти та початкові налаштування</span>
         </div>
         <div style="font-size: 13px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
-          Додайте новий генератор або об'єкт. Після створення ви зможете перемикатися між ними у шапці додатку.
+          Керування генераторами, додавання нових об'єктів або повне скидання/переналаштування поточного генератора.
         </div>
-        <button class="btn-primary" style="width: 100%; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="openWizardModal()">
-          ➕ Додати новий об'єкт/генератор
-        </button>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">🎨 Налаштування вигляду (PWA)</span>
-        </div>
-        <div style="font-size: 13px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
-          Зміна теми оформлення. Щоб встановити додаток, відкрийте його в браузері та оберіть "Додати на головний екран" (Add to Home Screen).
-        </div>
-        <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0;">
-          <label class="form-label" style="margin-bottom: 0; cursor: pointer;" for="themeSelect">Тема оформлення:</label>
-          <select id="themeSelect" class="form-input" style="width: 150px; padding: 6px 10px;" onchange="changeTheme()">
-            <option value="auto">Як у Telegram</option>
-            <option value="light">Світла</option>
-            <option value="dark">Темна</option>
-          </select>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn-primary" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 100%;" onclick="openWizardModal()">
+            ➕ Додати новий об'єкт / генератор
+          </button>
+          <button class="btn-secondary" style="border: 1px solid var(--accent-blue); color: var(--accent-blue); width: 100%;" onclick="openInitialSetupModal()">
+            🔄 Початкові налаштування (скидання під новий об'єкт)
+          </button>
         </div>
       </div>
 
@@ -388,7 +376,7 @@
         <div class="form-group">
           <label class="form-label">Поточні мотогодини (за тахометром генератора):</label>
           <div style="display: flex; gap: 8px;">
-            <input type="number" step="0.1" id="calibHoursInput" class="form-input" placeholder="напр. 150.5">
+            <input type="text" inputmode="decimal" id="calibHoursInput" class="form-input" placeholder="напр. 150.5">
             <button class="btn-secondary" style="width: 100px;" onclick="saveCalibHours()">Зберегти</button>
           </div>
         </div>
@@ -396,7 +384,7 @@
         <div class="form-group">
           <label class="form-label">Фактичний залишок пального в баку (л):</label>
           <div style="display: flex; gap: 8px;">
-            <input type="number" step="1" id="calibFuelInput" class="form-input" placeholder="напр. 85">
+            <input type="text" inputmode="decimal" id="calibFuelInput" class="form-input" placeholder="напр. 85">
             <button class="btn-secondary" style="width: 100px;" onclick="saveCalibFuel()">Зберегти</button>
           </div>
         </div>
@@ -404,7 +392,7 @@
         <div class="form-group">
           <label class="form-label">Паспортна норма витрати (л/год):</label>
           <div style="display: flex; gap: 8px;">
-            <input type="number" step="0.1" id="calibRateInput" class="form-input" placeholder="напр. 4.5">
+            <input type="text" inputmode="decimal" id="calibRateInput" class="form-input" placeholder="напр. 4.5">
             <button class="btn-secondary" style="width: 100px;" onclick="saveCalibRate()">Зберегти</button>
           </div>
         </div>
@@ -616,7 +604,7 @@
 
       <div class="form-group">
         <label class="form-label">Вартість робіт та матеріалів (₴, необов'язково):</label>
-        <input type="number" step="1" id="maintCostInput" class="form-input" placeholder="наприклад: 4500">
+        <input type="text" inputmode="decimal" id="maintCostInput" class="form-input" placeholder="наприклад: 4500">
       </div>
 
       <button class="btn-primary" onclick="submitMaintenance()">
@@ -656,7 +644,7 @@
 
       <div class="form-group">
         <label class="form-label">Вартість робіт та матеріалів (₴, необов'язково):</label>
-        <input type="number" step="1" id="interMaintCostInput" class="form-input" placeholder="наприклад: 650">
+        <input type="text" inputmode="decimal" id="interMaintCostInput" class="form-input" placeholder="наприклад: 650">
       </div>
 
       <button class="btn-primary" onclick="submitIntermediateMaint()">
@@ -689,8 +677,8 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Причина скидання (обов'язково):</label>
-        <textarea id="resetReasonInput" class="form-textarea" rows="3" placeholder="Вкажіть конкретну причину: напр. Промивка бака перед сезоном або Калібрування нового тахометра"></textarea>
+        <label class="form-label">Примітка до скидання (необов'язково):</label>
+        <input type="text" id="resetReasonInput" class="form-input" placeholder="За замовчуванням: Скидання адміністратором">
       </div>
 
       <button class="btn-danger" style="margin-top: 10px;" onclick="submitResetCounters()">
@@ -725,21 +713,27 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=1.4"></script>
+  
 
-  <!-- Wizard Modal: Add new generator -->
+  
+  </div>
+
+  <!-- MODAL: ДОДАТИ НОВИЙ ОБ'ЄКТ (WIZARD) -->
   <div class="modal-overlay" id="wizardModal">
-    <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
-      <h3 class="modal-title">➕ Додати об’єкт</h3>
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">➕ Додати новий об'єкт / генератор</div>
+        <button class="close-btn" onclick="closeModal('wizardModal')">&times;</button>
+      </div>
       
       <div class="form-group">
-        <label class="form-label">Назва об’єкту (або генератора):</label>
+        <label class="form-label">Назва об'єкту (або генератора):</label>
         <input type="text" id="wizName" class="form-input" placeholder="напр. Офіс Київ - Ген 1" required>
       </div>
       
       <div class="form-group">
         <label class="form-label">Тип пального:</label>
-        <select id="wizFuelType" class="form-input" style="appearance: auto;">
+        <select id="wizFuelType" class="form-select">
           <option value="ДП">ДП (Дизель)</option>
           <option value="А-95">Бензин А-95</option>
           <option value="А-92">Бензин А-92</option>
@@ -747,7 +741,7 @@
       </div>
       
       <div class="form-group">
-        <label class="form-label">Об’єм баку (л):</label>
+        <label class="form-label">Об'єм баку (л):</label>
         <input type="text" inputmode="decimal" id="wizTank" class="form-input" placeholder="напр. 150">
       </div>
       
@@ -771,12 +765,80 @@
         <input type="text" inputmode="decimal" id="wizMaint" class="form-input" value="250">
       </div>
 
-      <div style="display: flex; gap: 8px; margin-top: 24px;">
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
         <button class="btn-secondary" style="flex: 1;" onclick="closeModal('wizardModal')">Скасувати</button>
         <button class="btn-primary" style="flex: 1;" onclick="submitWizard()">Створити</button>
       </div>
     </div>
   </div>
+  <!-- MODAL: ПОЧАТКОВІ НАЛАШТУВАННЯ (ПЕРЕНАЛАШТУВАННЯ/СКИДАННЯ) -->
+  <div class="modal-overlay" id="initialSetupModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title" style="color: var(--accent-blue);">🔄 Початкові налаштування об'єкта</div>
+        <button class="close-btn" onclick="closeModal('initialSetupModal')">&times;</button>
+      </div>
 
+      <div class="alert-box-warning" style="margin-bottom: 14px;">
+        Використовується при заміні генератора або перевезенні бота на новий об'єкт. Встановлює нові вихідні показники.
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Назва генератора / об'єкта:</label>
+        <input type="text" id="setupGenName" class="form-input" placeholder="напр. Основний ДГУ">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Тип пального:</label>
+        <select id="setupFuelType" class="form-select">
+          <option value="ДП">ДП (Дизель)</option>
+          <option value="А-95">Бензин А-95</option>
+          <option value="А-92">Бензин А-92</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Об'єм паливного бака (л):</label>
+        <input type="text" inputmode="decimal" id="setupTankCapacity" class="form-input" placeholder="напр. 150">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Паспортна витрата (л/год):</label>
+        <input type="text" inputmode="decimal" id="setupFuelRate" class="form-input" placeholder="напр. 4.5">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Вихідні мотогодини (за тахометром):</label>
+        <input type="text" inputmode="decimal" id="setupTotalHours" class="form-input" placeholder="напр. 0">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Вихідний залишок пального в баку (л):</label>
+        <input type="text" inputmode="decimal" id="setupCurrentFuel" class="form-input" placeholder="напр. 100">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Інтервал регламентного ТО (мч):</label>
+        <input type="text" inputmode="decimal" id="setupMaintInterval" class="form-input" value="250">
+      </div>
+
+      <div class="form-group" style="margin-top: 14px; background: rgba(239, 68, 68, 0.08); padding: 10px; border-radius: 8px; border: 1px dashed var(--accent-red);">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent-red);">
+          <input type="checkbox" id="setupWipeLogs" checked style="width: 18px; height: 18px;">
+          Очистити історію звітів та заправок (чистий лист)
+        </label>
+        <div style="font-size: 11px; color: var(--hint-color); margin-top: 4px; margin-left: 26px;">
+          Видалить попередні сесії роботи та чеки заправок для цього генератора.
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button class="btn-secondary" style="flex: 1;" onclick="closeModal('initialSetupModal')">Скасувати</button>
+        <button class="btn-danger" style="flex: 1;" onclick="submitInitialSetup()">Застосувати</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=1.6"></script>
 </body>
 </html>
