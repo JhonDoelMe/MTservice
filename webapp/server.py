@@ -120,6 +120,8 @@ async def get_current_user(
                 return {
                     "user_id": db_user.user_id,
                     "user_name": db_user.display_name,
+                    "custom_name": db_user.custom_name or "",
+                    "full_name": db_user.full_name or "",
                     "role": "admin",
                     "is_admin": True
                 }
@@ -139,6 +141,8 @@ async def get_current_user(
             return {
                 "user_id": db_user.user_id,
                 "user_name": db_user.display_name,
+                "custom_name": db_user.custom_name or "",
+                "full_name": db_user.full_name or "",
                 "role": db_user.role,
                 "is_admin": False
             }
@@ -166,6 +170,8 @@ async def get_current_user(
         return {
             "user_id": db_user.user_id,
             "user_name": db_user.display_name,
+            "custom_name": db_user.custom_name or "",
+            "full_name": db_user.full_name or "",
             "role": "admin",
             "is_admin": True
         }
@@ -265,6 +271,8 @@ async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depend
 class RefuelRequest(BaseModel):
     amount_liters: float
     cost: Optional[float] = None
+    receipt_number: Optional[str] = None
+    delivered_by: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -281,7 +289,9 @@ async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(ge
             user_name=current_user["user_name"],
             amount_liters=req.amount_liters,
             cost=req.cost,
-            notes=req.notes
+            notes=req.notes,
+            receipt_number=req.receipt_number,
+            delivered_by=req.delivered_by
         )
 
     if not ok:
@@ -422,6 +432,8 @@ async def get_recent_fuel(current_user: Dict[str, Any] = Depends(get_current_use
             "fuel_after": f.fuel_after,
             "cost": f.cost,
             "user_name": f.user_name,
+            "receipt_number": f.receipt_number,
+            "delivered_by": f.delivered_by,
             "notes": f.notes,
         }
         for f in fuels
@@ -598,8 +610,9 @@ class UserCustomNameRequest(BaseModel):
 
 @app.post("/api/users/custom-name")
 async def set_user_custom_name(req: UserCustomNameRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+    # User can edit their own system name, or admin can edit anyone's
+    if not current_user.get("is_admin") and req.user_id != current_user.get("user_id"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам або власнику акаунта")
 
     session_maker = get_session_maker()
     async with session_maker() as session:

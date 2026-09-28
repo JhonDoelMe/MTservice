@@ -66,11 +66,19 @@ def run_tests():
     assert "today_fuel_burned" in data
 
     print("\n6. Testing POST /api/fuel/add...")
-    res = client.post("/api/fuel/add", json={"amount_liters": 50.0, "cost": 2750.0, "notes": "АЗС ОККО"})
+    res = client.post("/api/fuel/add", json={
+        "amount_liters": 50.0,
+        "cost": 2750.0,
+        "delivered_by": "Ковальчук В. І.",
+        "receipt_number": "Чек №8492",
+        "notes": "АЗС ОККО"
+    })
     assert res.status_code == 200
     data = res.json()
     print("Refuel response:", data["message"])
     assert data["status"] == "ok"
+    assert data["data"]["delivered_by"] == "Ковальчук В. І."
+    assert data["data"]["receipt_number"] == "Чек №8492"
 
     # Check that last_refuel is populated in status
     res = client.get("/api/status")
@@ -119,10 +127,16 @@ def run_tests():
     wb_test = openpyxl.load_workbook(BytesIO(res_excel.content))
     print("Excel sheets generated:", wb_test.sheetnames)
     assert "📊 Зведення" in wb_test.sheetnames
+    assert "📅 Добовий звіт" in wb_test.sheetnames
     assert "⏱ Журнал запусків" in wb_test.sheetnames
     assert "⛽ Заправки" in wb_test.sheetnames
     assert "🔧 Обслуговування (ТО)" in wb_test.sheetnames
     assert "🛡 Журнал аудиту" in wb_test.sheetnames
+
+    ws_daily_test = wb_test["📅 Добовий звіт"]
+    assert ws_daily_test.freeze_panes == "A2"
+    assert ws_daily_test.auto_filter.ref is not None
+    print(f"Verified Daily Sheet freeze_panes={ws_daily_test.freeze_panes}, auto_filter={ws_daily_test.auto_filter.ref}")
 
     ws_runs_test = wb_test["⏱ Журнал запусків"]
     assert ws_runs_test.freeze_panes == "A2"
