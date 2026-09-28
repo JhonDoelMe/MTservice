@@ -55,7 +55,6 @@ class RunLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
-    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     stop_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     duration_hours: Mapped[float] = mapped_column(Float, nullable=False)
@@ -79,7 +78,6 @@ class FuelLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
-    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     amount_liters: Mapped[float] = mapped_column(Float, nullable=False)
     fuel_before: Mapped[float] = mapped_column(Float, nullable=False)
@@ -96,7 +94,6 @@ class MaintenanceLog(Base):
     __tablename__ = "maintenance_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     generator_id: Mapped[int] = mapped_column(Integer, ForeignKey("generator_state.id"), default=1)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     hours_at_maintenance: Mapped[float] = mapped_column(Float, nullable=False)

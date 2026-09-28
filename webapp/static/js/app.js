@@ -52,6 +52,22 @@ function haptic(type = "light") {
   }
 }
 
+
+// Toast notification
+function showToast(message, duration = 3000) {
+  let toast = document.getElementById("toastNotification");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toastNotification";
+    toast.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--card-bg,#333);color:var(--text-color,#fff);padding:12px 24px;border-radius:12px;font-size:14px;z-index:10000;opacity:0;transition:opacity 0.3s;box-shadow:0 4px 12px rgba(0,0,0,0.3);text-align:center;max-width:80%;";
+    document.body.appendChild(toast);
+  }
+  toast.innerText = message;
+  toast.style.opacity = "1";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = "0"; }, duration);
+}
+
 // Fetch helper with Telegram initData
 async function apiCall(endpoint, method = "GET", body = null) {
   let url = endpoint;

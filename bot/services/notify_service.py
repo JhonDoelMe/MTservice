@@ -39,10 +39,11 @@ async def fetch_minfin_fuel_price(fuel_type: str) -> float:
 async def background_monitoring_loop(bot: Bot):
     """Періодичний фоновий моніторинг тривалості роботи, залишку пального, регламенту ТО та робочого графіка."""
     logger.info("Запуск фонового циклу моніторингу генератора...")
-    last_30m_check = 0
-    last_daily_price_check = None
-    notified_10m_date = None
-    notified_end_date = None
+    # Per-generator state tracking (keyed by gen_id)
+    last_30m_check = {}      # {gen_id: timestamp}
+    last_daily_price_check = {}  # {gen_id: date_str}
+    notified_10m_date = {}   # {gen_id: date_str}
+    notified_end_date = {}   # {gen_id: date_str}
 
     while True:
         try:
@@ -68,8 +69,8 @@ async def background_monitoring_loop(bot: Bot):
                     today_str = local_now.strftime("%Y-%m-%d")
                     
                     # --- 0. ПАРСИНГ МІНФІНУ (Раз на добу вранці ~08:00) ---
-                    if dash.get("auto_update_price") and local_now.hour >= 8 and last_daily_price_check != today_str:
-                        last_daily_price_check = today_str
+                    if dash.get("auto_update_price") and local_now.hour >= 8 and last_daily_price_check.get(gen_id) != today_str:
+                        last_daily_price_check[gen_id] = today_str
                         new_price = await fetch_minfin_fuel_price(dash.get("fuel_type", "ДП"))
                         if new_price > 0 and new_price != dash.get("fuel_price"):
                             gen = await session.get(GeneratorState, gen_id)
@@ -77,13 +78,6 @@ async def background_monitoring_loop(bot: Bot):
                                 gen.fuel_price = new_price
                                 await session.commit()
                                 logger.info(f"💰 Ціну палива автоматично оновлено: {new_price} ₴/л")
-
-                    users_res = await session.execute(
-                        select(User).where(User.role.in_(["admin", "operator"]))
-                    )
-                    notify_users = users_res.scalars().all()
-                    if not notify_users:
-                        continue
 
                     # --- 1. ПЕРЕВІРКА ГРАФІКА РОБОТИ ТА НАГАДУВАННЯ ЗА 10 ХВ ДО ЗУПИНКИ ---
                     if settings.WORK_HOURS_ENABLED and dash["is_running"]:
@@ -94,10 +88,10 @@ async def background_monitoring_loop(bot: Bot):
                             diff_mins = end_mins_of_day - curr_mins_of_day
 
                             # Нагадування рівно за 10 хвилин до закінчення робочого часу
-                            if 9 <= diff_mins <= 10 and notified_10m_date != today_str:
-                                notified_10m_date = today_str
+                            if 9 <= diff_mins <= 10 and notified_10m_date.get(gen_id) != today_str:
+                                notified_10m_date[gen_id] = today_str
                                 msg = (
-                                    f"⏰ <b>Увага! Наближається кінець робочого часу!</b>\n\n"
+                                    f"⏰ <b>[{dash.get('name', 'Генератор')}] Наближається кінець робочого часу!</b>\n\n"
                                     f"Генератор зараз працює. До кінця дозволеного графіка залишилося <b>10 хвилин</b> (зупинка о {settings.WORK_END_TIME}).\n"
                                     f"Будь ласка, підготуйтеся до зупинки генератора."
                                 )
@@ -108,10 +102,10 @@ async def background_monitoring_loop(bot: Bot):
                                         pass
 
                             # Попередження, якщо робочий час закінчився, а генератор досі ввімкнено
-                            if diff_mins <= 0 and diff_mins >= -10 and notified_end_date != today_str:
-                                notified_end_date = today_str
+                            if diff_mins <= 0 and diff_mins >= -10 and notified_end_date.get(gen_id) != today_str:
+                                notified_end_date[gen_id] = today_str
                                 msg = (
-                                    f"🚨 <b>Увага! Робочий час закінчився о {settings.WORK_END_TIME}!</b>\n\n"
+                                    f"🚨 <b>[{dash.get('name', 'Генератор')}] Робочий час закінчився о {settings.WORK_END_TIME}!</b>\n\n"
                                     f"Генератор досі знаходиться в роботі. Необхідно терміново зупинити генератор згідно з регламентом."
                                 )
                                 for u in notify_users:
@@ -125,14 +119,14 @@ async def background_monitoring_loop(bot: Bot):
                     # --- 2. ПЕРЕВІРКИ КОЖНІ 30 ХВИЛИН ---
                     import time
                     now_ts = time.time()
-                    if now_ts - last_30m_check >= 1800:
-                        last_30m_check = now_ts
+                    if now_ts - last_30m_check.get(gen_id, 0) >= 1800:
+                        last_30m_check[gen_id] = now_ts
 
                         # Попередження про безперервну роботу > 8 годин
                         if dash["is_running"] and dash["current_run_hours"] >= 8.0:
                             dur_str = format_duration(dash["current_run_hours"])
                             msg = (
-                                f"⚠️ <b>Увага: тривала робота генератора!</b>\n\n"
+                                f"⚠️ <b>[{dash.get('name', 'Генератор')}] Тривала робота!</b>\n\n"
                                 f"Генератор працює безперервно вже: <b>{dur_str}</b>.\n"
                                 f"Залишок пального: <code>{dash['current_fuel']:.1f} л</code> (~{dash['remaining_runtime_hours']:.1f} год).\n"
                                 f"Перевірте необхідність продовження роботи або дозаправки."
@@ -146,7 +140,7 @@ async def background_monitoring_loop(bot: Bot):
                         # Критичний залишок пального (< 15%)
                         if dash["fuel_pct"] <= 15.0 and dash["is_running"]:
                             msg = (
-                                f"🚨 <b>Критичний залишок пального!</b>\n\n"
+                                f"🚨 <b>[{dash.get('name', 'Генератор')}] Критичний залишок пального!</b>\n\n"
                                 f"У баку залишилося: <code>{dash['current_fuel']:.1f} л</code> ({dash['fuel_pct']:.0f}%).\n"
                                 f"Пального вистачить приблизно на: <b>{dash['remaining_runtime_hours']:.1f} год</b>.\n"
                                 f"Терміново організуйте заправку генератора!"
@@ -160,7 +154,7 @@ async def background_monitoring_loop(bot: Bot):
                         # Прострочене ТО
                         if dash["hours_to_maint"] <= 0:
                             msg = (
-                                f"🔧 <b>Увага! Планове ТО генератора прострочено!</b>\n\n"
+                                f"🔧 <b>[{dash.get('name', 'Генератор')}] Планове ТО прострочено!</b>\n\n"
                                 f"Перепробіг: <b>{abs(dash['hours_to_maint']):.1f} мч</b>.\n"
                                 f"Будь ласка, виконайте регламентні роботи та зафіксуйте у додатку."
                             )
