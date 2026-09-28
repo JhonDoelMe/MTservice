@@ -116,7 +116,15 @@ async def get_current_user(
 async def serve_mini_app():
     index_path = os.path.join("webapp", "templates", "index.html")
     with open(index_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        content = f.read()
+    return HTMLResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 # --- API ROUTES ---
