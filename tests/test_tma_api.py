@@ -114,6 +114,21 @@ def run_tests():
     assert "spreadsheetml" in res_excel.headers.get("content-type", "")
     print(f"Excel report streamed successfully: {len(res_excel.content)} bytes.")
 
+    import openpyxl
+    from io import BytesIO
+    wb_test = openpyxl.load_workbook(BytesIO(res_excel.content))
+    print("Excel sheets generated:", wb_test.sheetnames)
+    assert "📊 Зведення" in wb_test.sheetnames
+    assert "⏱ Журнал запусків" in wb_test.sheetnames
+    assert "⛽ Заправки" in wb_test.sheetnames
+    assert "🔧 Обслуговування (ТО)" in wb_test.sheetnames
+    assert "🛡 Журнал аудиту" in wb_test.sheetnames
+
+    ws_runs_test = wb_test["⏱ Журнал запусків"]
+    assert ws_runs_test.freeze_panes == "A2"
+    assert ws_runs_test.auto_filter.ref is not None
+    print(f"Verified Excel freeze_panes={ws_runs_test.freeze_panes}, auto_filter={ws_runs_test.auto_filter.ref}")
+
     print("\n11. Testing POST /api/maintenance/perform (Intermediate Maintenance)...")
     res_inter = client.post("/api/maintenance/perform", json={
         "description": "Заміна свічок запалювання NGK",
