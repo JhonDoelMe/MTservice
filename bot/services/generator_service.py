@@ -198,7 +198,8 @@ class GeneratorService:
         session: AsyncSession,
         user_id: int,
         user_name: str,
-        custom_start_time: Optional[datetime] = None
+        custom_start_time: Optional[datetime] = None,
+        gen_id: int = 1
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         gen = await GeneratorService.get_state(session, gen_id)
         if gen.is_running:
@@ -239,7 +240,8 @@ class GeneratorService:
         user_id: int,
         user_name: str,
         custom_stop_time: Optional[datetime] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        gen_id: int = 1
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         gen = await GeneratorService.get_state(session, gen_id)
         if not gen.is_running:
@@ -364,6 +366,8 @@ class GeneratorService:
         title: Optional[str] = None,
         parts_replaced: Optional[str] = None,
         cost: Optional[float] = None
+    ,
+        gen_id: int = 1
     ) -> Tuple[bool, str, Dict[str, Any]]:
         gen = await GeneratorService.get_state(session, gen_id)
         hours_at_maint = gen.total_hours

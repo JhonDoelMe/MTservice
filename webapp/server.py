@@ -257,7 +257,8 @@ async def start_generator(req: StartRequest, current_user: Dict[str, Any] = Depe
             session,
             user_id=current_user["user_id"],
             user_name=current_user["user_name"],
-            custom_start_time=custom_dt
+            custom_start_time=custom_dt,
+            gen_id=gen_id
         )
 
     if not ok:
@@ -294,7 +295,8 @@ async def stop_generator(req: StopRequest, current_user: Dict[str, Any] = Depend
             user_id=current_user["user_id"],
             user_name=current_user["user_name"],
             custom_stop_time=custom_dt,
-            notes=req.notes
+            notes=req.notes,
+            gen_id=gen_id
         )
 
     if not ok:
@@ -689,6 +691,8 @@ async def reset_counters(req: ResetRequest, current_user: Dict[str, Any] = Depen
             user_name=current_user["user_name"],
             reset_type=req.reset_type,
             reason=req.reason
+        ,
+            gen_id=gen_id
         )
 
     if not ok:

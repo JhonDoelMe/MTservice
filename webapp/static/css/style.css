@@ -754,5 +754,7 @@ input:checked + .slider:before {
   line-height: 1.4;
 }
 
-@ k e y f r a m e s   s p i n   {   f r o m   {   t r a n s f o r m :   r o t a t e ( 0 d e g ) ;   }   t o   {   t r a n s f o r m :   r o t a t e ( 3 6 0 d e g ) ;   }   }  
+@ k e y f r a m e s   s p i n   {   f r o m   {   t r a n s f o r m :   r o t a t e ( 0 d e g ) ;   }   t o   {   t r a n s f o r m :   r o t a t e ( 3 6 0 d e g ) ;   }   } 
  
+ 
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
