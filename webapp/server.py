@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from bot.config import settings
 from bot.database.db import get_session_maker
-from bot.database.models import User, RunLog, FuelLog, MaintenanceLog
+from bot.database.models import User, RunLog, FuelLog, MaintenanceLog, AuditResetLog
 from bot.services.generator_service import (
     GeneratorService,
     format_dt,
@@ -43,7 +43,6 @@ def validate_telegram_init_data(init_data: str) -> Optional[Dict[str, Any]]:
         received_hash = parsed_data.pop("hash")
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
 
-        # Secret key: HMAC-SHA256 of bot token with "WebAppData"
         secret_key = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
         computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -58,7 +57,7 @@ def validate_telegram_init_data(init_data: str) -> Optional[Dict[str, Any]]:
 async def get_current_user(
     x_telegram_init_data: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
-    """Authenticates Telegram user or provides dev fallback for local browser testing."""
+    """Authenticates Telegram user with strict admin approval verification."""
     tg_user = validate_telegram_init_data(x_telegram_init_data) if x_telegram_init_data else None
 
     session_maker = get_session_maker()
@@ -70,7 +69,8 @@ async def get_current_user(
 
             db_user = await session.get(User, user_id)
             if not db_user:
-                role = "admin" if is_admin else "operator"
+                # Новий користувач отримує роль pending (якщо не прописаний в ADMIN_IDS)
+                role = "admin" if is_admin else "pending"
                 db_user = User(
                     user_id=user_id,
                     username=tg_user.get("username"),
@@ -81,14 +81,26 @@ async def get_current_user(
                 await session.commit()
                 await session.refresh(db_user)
 
+            # Перевірка схвалення адміністратором
+            if db_user.role == "pending":
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"⏳ Ваш акаунт (ID: {user_id}) очікує підтвердження адміністратором. Зверніться до керівника для надання доступу."
+                )
+            if db_user.role == "blocked":
+                raise HTTPException(
+                    status_code=403,
+                    detail="⛔ Доступ до системи заблоковано адміністратором."
+                )
+
             return {
                 "user_id": db_user.user_id,
-                "user_name": db_user.full_name or user_name,
+                "user_name": db_user.display_name,
                 "role": db_user.role,
                 "is_admin": (db_user.role == "admin" or is_admin)
             }
 
-        # Dev fallback for testing in ordinary browser outside Telegram
+        # Dev fallback для локального тестування у браузері без Telegram
         default_admin_id = settings.ADMIN_IDS[0] if settings.ADMIN_IDS else 100000001
         db_user = await session.get(User, default_admin_id)
         if not db_user:
@@ -104,7 +116,7 @@ async def get_current_user(
 
         return {
             "user_id": db_user.user_id,
-            "user_name": db_user.full_name,
+            "user_name": db_user.display_name,
             "role": db_user.role,
             "is_admin": True
         }
@@ -129,11 +141,17 @@ async def serve_mini_app():
 
 # --- API ROUTES ---
 
+@app.get("/api/me")
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return current_user
+
+
 @app.get("/api/status")
-async def get_status():
+async def get_status(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()
     async with session_maker() as session:
         data = await GeneratorService.get_dashboard_data(session)
+    data["current_user"] = current_user
     return data
 
 
@@ -225,6 +243,9 @@ async def add_fuel(req: RefuelRequest, current_user: Dict[str, Any] = Depends(ge
 
 class MaintenanceRequest(BaseModel):
     description: str
+    is_main: bool = True
+    maint_type: str = "main"
+    title: Optional[str] = None
     parts_replaced: Optional[str] = None
     cost: Optional[float] = None
 
@@ -241,6 +262,9 @@ async def perform_maint(req: MaintenanceRequest, current_user: Dict[str, Any] = 
             user_id=current_user["user_id"],
             user_name=current_user["user_name"],
             description=req.description.strip(),
+            is_main=req.is_main,
+            maint_type=req.maint_type,
+            title=req.title,
             parts_replaced=req.parts_replaced,
             cost=req.cost
         )
@@ -254,7 +278,7 @@ async def perform_maint(req: MaintenanceRequest, current_user: Dict[str, Any] = 
 # --- REPORTS & LISTS ---
 
 @app.get("/api/reports/summary")
-async def get_reports_summary():
+async def get_reports_summary(current_user: Dict[str, Any] = Depends(get_current_user)):
     local_tz = get_local_tz()
     now_local = datetime.now(local_tz)
 
@@ -307,7 +331,7 @@ async def get_reports_summary():
 
 
 @app.get("/api/reports/runs")
-async def get_recent_runs():
+async def get_recent_runs(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()
     async with session_maker() as session:
         res = await session.execute(select(RunLog).order_by(RunLog.id.desc()).limit(15))
@@ -333,7 +357,7 @@ async def get_recent_runs():
 
 
 @app.get("/api/reports/fuel")
-async def get_recent_fuel():
+async def get_recent_fuel(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()
     async with session_maker() as session:
         res = await session.execute(select(FuelLog).order_by(FuelLog.id.desc()).limit(15))
@@ -356,10 +380,10 @@ async def get_recent_fuel():
 
 
 @app.get("/api/reports/maintenance")
-async def get_recent_maintenance():
+async def get_recent_maintenance(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()
     async with session_maker() as session:
-        res = await session.execute(select(MaintenanceLog).order_by(MaintenanceLog.id.desc()).limit(10))
+        res = await session.execute(select(MaintenanceLog).order_by(MaintenanceLog.id.desc()).limit(15))
         maints = res.scalars().all()
 
     return [
@@ -373,13 +397,39 @@ async def get_recent_maintenance():
             "parts_replaced": m.parts_replaced,
             "cost": m.cost,
             "user_name": m.user_name,
+            "is_main": m.is_main,
+            "maint_type": m.maint_type,
+            "title": m.title or ("Головне ТО" if m.is_main else "Проміжне ТО")
         }
         for m in maints
     ]
 
 
+@app.get("/api/reports/audit")
+async def get_audit_logs(current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        res = await session.execute(select(AuditResetLog).order_by(AuditResetLog.id.desc()).limit(20))
+        audits = res.scalars().all()
+
+    return [
+        {
+            "id": a.id,
+            "timestamp": format_dt(a.timestamp),
+            "reset_type": a.reset_type,
+            "reason": a.reason,
+            "user_name": a.user_name,
+            "details": a.details
+        }
+        for a in audits
+    ]
+
+
 @app.get("/api/reports/excel")
-async def export_excel():
+async def export_excel(current_user: Dict[str, Any] = Depends(get_current_user)):
     session_maker = get_session_maker()
     async with session_maker() as session:
         stream = await ExcelService.generate_full_report(session)
@@ -421,6 +471,32 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
     return {"status": "ok", "message": "Параметри оновлено"}
 
 
+class ResetRequest(BaseModel):
+    reset_type: str  # "all", "fuel_zero", "hours_zero", "maint_main", "maint_intermediate"
+    reason: str
+
+
+@app.post("/api/admin/reset")
+async def reset_counters(req: ResetRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        ok, msg, data = await GeneratorService.reset_counters(
+            session,
+            user_id=current_user["user_id"],
+            user_name=current_user["user_name"],
+            reset_type=req.reset_type,
+            reason=req.reason
+        )
+
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    return {"status": "ok", "message": msg, "data": data}
+
+
 @app.get("/api/users")
 async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
     if not current_user.get("is_admin"):
@@ -436,6 +512,8 @@ async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
             "user_id": u.user_id,
             "username": u.username,
             "full_name": u.full_name,
+            "custom_name": u.custom_name,
+            "display_name": u.display_name,
             "role": u.role,
             "created_at": u.created_at.isoformat()
         }
@@ -462,3 +540,24 @@ async def set_user_role(req: UserRoleRequest, current_user: Dict[str, Any] = Dep
         await session.commit()
 
     return {"status": "ok", "message": f"Роль змінено на {req.role}"}
+
+
+class UserCustomNameRequest(BaseModel):
+    user_id: int
+    custom_name: str
+
+
+@app.post("/api/users/custom-name")
+async def set_user_custom_name(req: UserCustomNameRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Дія доступна лише адміністраторам")
+
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        u = await session.get(User, req.user_id)
+        if not u:
+            raise HTTPException(status_code=404, detail="Користувача не знайдено")
+        u.custom_name = req.custom_name.strip() if req.custom_name else None
+        await session.commit()
+
+    return {"status": "ok", "message": "Системне ім'я користувача оновлено"}

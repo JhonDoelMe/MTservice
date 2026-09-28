@@ -114,8 +114,65 @@ def run_tests():
     assert "spreadsheetml" in res_excel.headers.get("content-type", "")
     print(f"Excel report streamed successfully: {len(res_excel.content)} bytes.")
 
+    print("\n11. Testing POST /api/maintenance/perform (Intermediate Maintenance)...")
+    res_inter = client.post("/api/maintenance/perform", json={
+        "description": "Заміна свічок запалювання NGK",
+        "is_main": False,
+        "maint_type": "spark_plugs",
+        "cost": 650.0
+    })
+    assert res_inter.status_code == 200
+    print("Intermediate maint response:", res_inter.json()["message"])
+    status_inter = client.get("/api/status").json()
+    print(f"Spark plugs hours ago: {status_inter['spark_plugs_hours_ago']}")
+    assert status_inter["spark_plugs_hours_ago"] == 0.0
+
+    print("\n12. Testing POST /api/users/custom-name...")
+    res_name = client.post("/api/users/custom-name", json={
+        "user_id": 100000001,
+        "custom_name": "Іван Петренко (Старший електрик)"
+    })
+    assert res_name.status_code == 200
+    users = client.get("/api/users").json()
+    admin_u = next(u for u in users if u["user_id"] == 100000001)
+    print(f"User custom_name: {admin_u['custom_name']}, display_name: {admin_u['display_name']}")
+    assert admin_u["custom_name"] == "Іван Петренко (Старший електрик)"
+    assert admin_u["display_name"] == "Іван Петренко (Старший електрик)"
+
+    print("\n13. Testing POST /api/admin/reset & Audit Log...")
+    res_reset = client.post("/api/admin/reset", json={
+        "reset_type": "fuel_zero",
+        "reason": "Калібрування бака після очищення"
+    })
+    assert res_reset.status_code == 200
+    status_reset = client.get("/api/status").json()
+    print(f"Current fuel after reset: {status_reset['current_fuel']} L")
+    assert status_reset["current_fuel"] == 0.0
+
+    audit_logs = client.get("/api/reports/audit").json()
+    print(f"Audit logs count: {len(audit_logs)}, latest: {audit_logs[0]}")
+    assert len(audit_logs) >= 1
+    assert audit_logs[0]["reset_type"] == "fuel_zero"
+    assert "Калібрування" in audit_logs[0]["reason"]
+
+    print("\n14. Testing mandatory reason check on reset...")
+    res_invalid_reset = client.post("/api/admin/reset", json={
+        "reset_type": "hours_zero",
+        "reason": " "
+    })
+    assert res_invalid_reset.status_code == 400
+    print("Invalid reset caught successfully:", res_invalid_reset.json()["detail"])
+
+    print("\n15. Testing Working Hours schedule structure in status...")
+    status_wh = client.get("/api/status").json()
+    assert "work_hours" in status_wh
+    print(f"Work hours: {status_wh['work_hours']}")
+    assert status_wh["work_hours"]["start"] == "08:00"
+    assert status_wh["work_hours"]["end"] == "20:00"
+
     print("\nALL TELEGRAM MINI APP TESTS PASSED PERFECTLY! 🚀")
 
 
 if __name__ == "__main__":
     run_tests()
+

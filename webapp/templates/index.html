@@ -4,11 +4,33 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Диспетчер генератора</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=1.1">
+  <link rel="stylesheet" href="/static/css/style.css?v=1.2">
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+
+  <!-- Lock Screen Overlay (Pending / Blocked) -->
+  <div id="accessLockOverlay" class="lock-overlay" style="display: none;">
+    <div class="lock-card">
+      <div class="lock-icon" id="lockIcon">⏳</div>
+      <h2 class="lock-title" id="lockTitle">Очікування доступу</h2>
+      <p class="lock-msg" id="lockMsg">
+        Ваш обліковий запис очікує підтвердження адміністратором.
+      </p>
+      <div class="lock-info-box">
+        <div style="font-size: 12px; color: var(--hint-color);">Ваш Telegram ID:</div>
+        <div class="lock-user-id" id="lockUserId">—</div>
+        <div class="lock-user-name" id="lockUserName">—</div>
+      </div>
+      <p style="font-size: 12px; color: var(--hint-color); margin-top: 16px;">
+        Передайте цей ID керівнику або адміністратору для надання доступу до диспетчерської.
+      </p>
+      <button class="btn-secondary" style="margin-top: 16px; width: 100%;" onclick="location.reload()">
+        🔄 Перевірити знову
+      </button>
+    </div>
+  </div>
 
   <!-- Top App Header -->
   <header class="app-header">
@@ -34,7 +56,13 @@
       <!-- Power Control Card -->
       <div class="card" id="powerCard">
         <div class="card-header">
-          <span class="card-title">Керування живленням</span>
+          <div>
+            <span class="card-title">Керування живленням</span>
+            <div class="work-hours-chip" id="workHoursChip" style="display: none;">
+              <span id="workHoursIcon">🕒</span>
+              <span id="workHoursText">Графік: 08:00 – 20:00</span>
+            </div>
+          </div>
           <span style="font-size: 12px; color: var(--hint-color);" id="currentTimeKyiv">Київ</span>
         </div>
 
@@ -156,7 +184,48 @@
         </div>
 
         <button class="btn-primary" style="margin-top: 16px;" onclick="openMaintModal()">
-          🛠 Відмітити проведення ТО
+          🛠 Відмітити проведення ТО (Заміна оливи)
+        </button>
+      </div>
+
+      <!-- Intermediate Maintenance Card -->
+      <div class="card" style="margin-top: 14px;">
+        <div class="card-header">
+          <span class="card-title">Проміжне обслуговування</span>
+          <span style="font-size: 11px; color: var(--hint-color);">Без обнулення оливи</span>
+        </div>
+
+        <div class="inter-maint-grid">
+          <div class="inter-item">
+            <div class="inter-icon">⚡</div>
+            <div class="inter-content">
+              <div class="inter-name">Свічки запалювання</div>
+              <div class="inter-sub" id="sparkPlugsAgoText">0.0 мч тому</div>
+            </div>
+            <button class="btn-mini" onclick="openIntermediateMaintModal('spark_plugs', 'Заміна свічок запалювання')">Замінити</button>
+          </div>
+
+          <div class="inter-item">
+            <div class="inter-icon">💨</div>
+            <div class="inter-content">
+              <div class="inter-name">Повітряний фільтр</div>
+              <div class="inter-sub" id="airFilterAgoText">0.0 мч тому</div>
+            </div>
+            <button class="btn-mini" onclick="openIntermediateMaintModal('air_filter', 'Заміна повітряного фільтру')">Замінити</button>
+          </div>
+
+          <div class="inter-item">
+            <div class="inter-icon">🛢</div>
+            <div class="inter-content">
+              <div class="inter-name">Паливний фільтр</div>
+              <div class="inter-sub" id="fuelFilterAgoText">0.0 мч тому</div>
+            </div>
+            <button class="btn-mini" onclick="openIntermediateMaintModal('fuel_filter', 'Заміна паливного фільтру')">Замінити</button>
+          </div>
+        </div>
+
+        <button class="btn-secondary" style="width: 100%; margin-top: 14px;" onclick="openIntermediateMaintModal('other', 'Проміжне обслуговування')">
+          + Інші проміжні роботи (АКБ, ремені тощо)
         </button>
       </div>
 
@@ -274,11 +343,36 @@
         </div>
       </div>
 
+      <!-- Danger Zone / Counter Resets -->
+      <div class="card danger-card">
+        <div class="card-header">
+          <span class="card-title" style="color: var(--accent-red);">⚠️ Скидання лічильників та бака</span>
+        </div>
+        <div style="font-size: 13px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
+          Повне або вибіркове обнулення показників генератора (бак, години, ТО). Всі скидання фіксуються в журналі аудиту із фіксацією виконавця та причини.
+        </div>
+        <button class="btn-danger" onclick="openResetModal()">
+          ⚙️ Скинути лічильники / обнулити бак
+        </button>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <span class="card-title">Користувачі та доступ</span>
+          <span style="font-size: 11px; color: var(--hint-color);" id="usersCountBadge">Диспетчери</span>
         </div>
         <div id="usersList">
+          <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
+        </div>
+      </div>
+
+      <!-- Audit Reset Logs -->
+      <div class="card" id="auditCard">
+        <div class="card-header">
+          <span class="card-title">Журнал скидань та аудиту</span>
+          <button class="btn-mini" onclick="loadAuditLogs()">Оновити</button>
+        </div>
+        <div id="auditHistoryList">
           <div style="color: var(--hint-color); font-size: 13px; text-align: center; padding: 10px;">Завантаження...</div>
         </div>
       </div>
@@ -397,6 +491,106 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=1.1"></script>
+  <!-- MODAL: ПРОМІЖНЕ ТО -->
+  <div class="modal-overlay" id="intermediateMaintModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">🔧 Проміжне ТО</div>
+        <button class="close-btn" onclick="closeModal('intermediateMaintModal')">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Тип робіт:</label>
+        <select id="interMaintTypeSelect" class="form-select" onchange="onInterMaintTypeChange()">
+          <option value="spark_plugs">⚡ Заміна свічок запалювання</option>
+          <option value="air_filter">💨 Заміна повітряного фільтру</option>
+          <option value="fuel_filter">🛢 Заміна паливного фільтру</option>
+          <option value="battery">🔋 Обслуговування / заміна АКБ</option>
+          <option value="other">⚙️ Інше проміжне обслуговування</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Опис робіт:</label>
+        <textarea id="interMaintDescInput" class="form-textarea" rows="3" placeholder="наприклад: Заміна свічок запалювання NGK BPR6ES"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Замінені деталі / розхідники:</label>
+        <input type="text" id="interMaintPartsInput" class="form-input" placeholder="наприклад: Свічки NGK 2 шт">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Вартість робіт та матеріалів (₴, необов'язково):</label>
+        <input type="number" step="1" id="interMaintCostInput" class="form-input" placeholder="наприклад: 650">
+      </div>
+
+      <button class="btn-primary" onclick="submitIntermediateMaint()">
+        Зберегти проміжне ТО
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: СКИДАННЯ ЛІЧИЛЬНИКІВ -->
+  <div class="modal-overlay" id="resetModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title" style="color: var(--accent-red);">⚠️ Скидання показників</div>
+        <button class="close-btn" onclick="closeModal('resetModal')">&times;</button>
+      </div>
+
+      <div class="alert-box-warning" style="margin-bottom: 14px;">
+        Всі скидання протоколюються в системному журналі аудиту із фіксацією вашого імені та причини.
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Оберіть дію скидання:</label>
+        <select id="resetTypeSelect" class="form-select">
+          <option value="fuel_zero">⛽ Обнулити паливний бак (встановити 0 л)</option>
+          <option value="hours_zero">⏱ Обнулити мотогодини (встановити 0.0 мч)</option>
+          <option value="maint_main">🛠 Скинути лічильник головного ТО (до наступного 250 мч)</option>
+          <option value="maint_intermediate">🔧 Скинути проміжні лічильники (свічки, фільтри)</option>
+          <option value="all">💥 ПОВНЕ СКИДАННЯ ВСЬОГО (бак 0, години 0, ТО скинуто)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Причина скидання (обов'язково):</label>
+        <textarea id="resetReasonInput" class="form-textarea" rows="3" placeholder="Вкажіть конкретну причину: напр. Промивка бака перед сезоном або Калібрування нового тахометра"></textarea>
+      </div>
+
+      <button class="btn-danger" style="margin-top: 10px;" onclick="submitResetCounters()">
+        Підтвердити скидання
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: СИСТЕМНЕ ІМ'Я КОРИСТУВАЧА -->
+  <div class="modal-overlay" id="editUserNameModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div class="modal-title">👤 Системне ім'я користувача</div>
+        <button class="close-btn" onclick="closeModal('editUserNameModal')">&times;</button>
+      </div>
+
+      <input type="hidden" id="editUserIdInput">
+
+      <div class="form-group">
+        <label class="form-label">Користувач Telegram:</label>
+        <div id="editUserTgInfo" style="font-weight: 600; margin-bottom: 8px; color: var(--text-color);">—</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Системне ім'я (для звітів, логів та диспетчерської):</label>
+        <input type="text" id="editCustomNameInput" class="form-input" placeholder="напр. Іван Петренко (Старший електрик)">
+      </div>
+
+      <button class="btn-primary" onclick="submitCustomUserName()">
+        Зберегти ім'я
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=1.2"></script>
 </body>
 </html>
