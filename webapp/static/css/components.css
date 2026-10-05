@@ -75,9 +75,11 @@
   border-radius: var(--radius-md);
   padding: 12px 14px;
   color: var(--text-color);
-  font-size: 15px;
+  font-size: 16px;
   outline: none;
   transition: border-color 0.15s ease;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .form-input:focus, .form-textarea:focus, .form-select:focus {

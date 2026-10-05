@@ -24,7 +24,6 @@
   margin: 0;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
-  user-select: none;
 }
 
 body {
@@ -35,6 +34,15 @@ body {
   line-height: 1.4;
   padding-bottom: 85px;
   overflow-x: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+input, textarea, select {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  font-size: 16px !important;
 }
 
 /* Header */
@@ -363,6 +371,44 @@ body {
 
 .nav-icon {
   font-size: 20px;
+}
+
+/* Responsive screen adaptation */
+@media (min-width: 600px) {
+  .container {
+    max-width: 640px;
+  }
+}
+
+@media (min-width: 900px) {
+  .container {
+    max-width: 800px;
+    padding: 20px;
+  }
+  .app-header {
+    max-width: 800px;
+    margin: 0 auto;
+    border-radius: var(--radius-md);
+  }
+  .nav-bar {
+    max-width: 800px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .container {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .metrics-val {
+    font-size: 16px;
+  }
+  .timer-display {
+    font-size: 38px;
+  }
 }
 
 

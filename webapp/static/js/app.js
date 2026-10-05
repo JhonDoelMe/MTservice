@@ -26,6 +26,18 @@ function haptic(type = "light") {
   }
 }
 
+// Numeric input sanitization (blocks letters and symbols, normalizes commas to dots)
+function sanitizeNumeric(el) {
+  if (!el) return;
+  let val = el.value.replace(/,/g, ".");
+  val = val.replace(/[^0-9.]/g, "");
+  const parts = val.split(".");
+  if (parts.length > 2) {
+    val = parts[0] + "." + parts.slice(1).join("");
+  }
+  el.value = val;
+}
+
 // Fetch helper with Telegram initData
 async function apiCall(endpoint, method = "GET", body = null) {
   const headers = {
