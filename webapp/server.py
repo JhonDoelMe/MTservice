@@ -1,9 +1,10 @@
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -21,10 +22,27 @@ from bot.services.excel_service import ExcelService
 from bot.handlers.generator import parse_time_input
 from webapp.auth import get_current_user
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="MTservice Generator TMA Backend")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="webapp/static"), name="static")
+
+
+@app.middleware("http")
+async def global_exception_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Неперехоплена помилка сервера API [{request.method} {request.url}]: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Сталася внутрішня помилка сервера. Спробуйте пізніше."}
+        )
+
 
 
 
@@ -356,6 +374,11 @@ class AdminSettingsRequest(BaseModel):
     fuel_rate: Optional[float] = None
     tank_capacity: Optional[float] = None
     maintenance_interval: Optional[float] = None
+    warning_hours: Optional[float] = None
+    work_hours_enabled: Optional[bool] = None
+    work_start_time: Optional[str] = None
+    work_end_time: Optional[str] = None
+    name: Optional[str] = None
 
 
 @app.post("/api/admin/settings")
@@ -371,7 +394,12 @@ async def update_admin_settings(req: AdminSettingsRequest, current_user: Dict[st
             current_fuel=req.current_fuel,
             fuel_rate=req.fuel_rate,
             tank_capacity=req.tank_capacity,
-            maintenance_interval=req.maintenance_interval
+            maintenance_interval=req.maintenance_interval,
+            warning_hours=req.warning_hours,
+            work_hours_enabled=req.work_hours_enabled,
+            work_start_time=req.work_start_time,
+            work_end_time=req.work_end_time,
+            name=req.name
         )
 
     return {"status": "ok", "message": "Параметри оновлено"}

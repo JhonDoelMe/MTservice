@@ -38,9 +38,13 @@ async def background_monitoring_loop(bot: Bot):
                 today_str = local_now.strftime("%Y-%m-%d")
 
                 # --- 1. ПЕРЕВІРКА ГРАФІКА РОБОТИ ТА НАГАДУВАННЯ ЗА 10 ХВ ДО ЗУПИНКИ ---
-                if settings.WORK_HOURS_ENABLED and dash["is_running"]:
+                work_cfg = dash.get("work_hours", {})
+                work_enabled = work_cfg.get("enabled", False)
+                work_end = work_cfg.get("end", "20:00")
+
+                if work_enabled and dash["is_running"]:
                     try:
-                        end_parts = [int(p) for p in settings.WORK_END_TIME.split(":")]
+                        end_parts = [int(p) for p in work_end.split(":")]
                         end_mins_of_day = end_parts[0] * 60 + end_parts[1]
                         curr_mins_of_day = local_now.hour * 60 + local_now.minute
                         diff_mins = end_mins_of_day - curr_mins_of_day
@@ -50,7 +54,7 @@ async def background_monitoring_loop(bot: Bot):
                             notified_10m_date = today_str
                             msg = (
                                 f"⏰ <b>Увага! Наближається кінець робочого часу!</b>\n\n"
-                                f"Генератор зараз працює. До кінця дозволеного графіка залишилося <b>10 хвилин</b> (зупинка о {settings.WORK_END_TIME}).\n"
+                                f"Генератор зараз працює. До кінця дозволеного графіка залишилося <b>10 хвилин</b> (зупинка о {work_end}).\n"
                                 f"Будь ласка, підготуйтеся до зупинки генератора."
                             )
                             for u in notify_users:
@@ -63,7 +67,7 @@ async def background_monitoring_loop(bot: Bot):
                         if diff_mins <= 0 and diff_mins >= -10 and notified_end_date != today_str:
                             notified_end_date = today_str
                             msg = (
-                                f"🚨 <b>Увага! Робочий час закінчився о {settings.WORK_END_TIME}!</b>\n\n"
+                                f"🚨 <b>Увага! Робочий час закінчився о {work_end}!</b>\n\n"
                                 f"Генератор досі знаходиться в роботі. Необхідно терміново зупинити генератор згідно з регламентом."
                             )
                             for u in notify_users:

@@ -13,7 +13,7 @@ import uvicorn
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
+from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo, ErrorEvent
 
 from bot.config import settings
 from bot.database.db import init_db
@@ -82,6 +82,20 @@ async def main():
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
     setup_routers(dp)
+    @dp.error()
+    async def global_bot_error_handler(event: ErrorEvent):
+        logger.error(
+            f"Неперехоплена помилка Aiogram під час обробки оновлення: {event.exception}",
+            exc_info=True
+        )
+        try:
+            if event.update and event.update.message:
+                await event.update.message.answer(
+                    "⚠️ Сталася помилка під час обробки запиту. Інформація зафіксована в журналі."
+                )
+        except Exception:
+            pass
+        return True
 
     await configure_bot_menu(bot)
 
@@ -90,12 +104,23 @@ async def main():
     logger.info(f"Веб-інтерфейс Mini App запущено на http://{settings.WEB_HOST}:{settings.WEB_PORT}")
     logger.info("Запуск Telegram бота (polling)...")
 
+    async def start_resilient_polling(dispatcher: Dispatcher, b: Bot):
+        while True:
+            try:
+                await dispatcher.start_polling(b, handle_signals=False)
+                break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Збій у циклі polling Telegram: {e}. Перепідключення через 5 секунд...", exc_info=True)
+                await asyncio.sleep(5)
+
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         # Запускаємо одночасно сервер Mini App та бота в єдиному асинхронному циклі
         await asyncio.gather(
             server.serve(),
-            dp.start_polling(bot)
+            start_resilient_polling(dp, bot)
         )
     finally:
         bg_task.cancel()

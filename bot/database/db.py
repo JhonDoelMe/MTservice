@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy import select
+from sqlalchemy import select, text
 from bot.config import settings
 from bot.database.models import Base, GeneratorState, User
 from bot.database.cache import cache
@@ -37,6 +37,32 @@ def get_session_maker():
     return _session_maker
 
 
+async def apply_migrations(engine):
+    """Safely adds missing columns to existing tables for both Postgres and SQLite."""
+    try:
+        async with engine.begin() as conn:
+            dialect = engine.dialect.name
+            columns_to_add = [
+                ("generator_state", "warning_hours", "FLOAT DEFAULT 20.0"),
+                ("generator_state", "work_hours_enabled", "BOOLEAN DEFAULT FALSE"),
+                ("generator_state", "work_start_time", "VARCHAR(10) DEFAULT '08:00'"),
+                ("generator_state", "work_end_time", "VARCHAR(10) DEFAULT '20:00'"),
+            ]
+            for table, col, col_def in columns_to_add:
+                try:
+                    if dialect == "postgresql":
+                        await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}"))
+                    else:
+                        pragma_res = await conn.execute(text(f"PRAGMA table_info({table})"))
+                        existing_cols = [row[1] for row in pragma_res.fetchall()]
+                        if col not in existing_cols:
+                            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
+                except Exception as col_err:
+                    logger.debug(f"Migration check {table}.{col}: {col_err}")
+    except Exception as err:
+        logger.warning(f"Помилка перевірки міграцій: {err}")
+
+
 async def init_db():
     global _active_engine, _session_maker
     await cache.init()
@@ -46,6 +72,7 @@ async def init_db():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        await apply_migrations(engine)
     except Exception as e:
         logger.warning(f"Помилка підключення до первинної БД ({e}). Перемикання на SQLite резерв...")
         fallback_url = "sqlite+aiosqlite:///data/generator.db"
@@ -53,6 +80,7 @@ async def init_db():
         _session_maker = async_sessionmaker(_active_engine, expire_on_commit=False, class_=AsyncSession)
         async with _active_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        await apply_migrations(_active_engine)
 
     session_maker = get_session_maker()
     async with session_maker() as session:
@@ -69,8 +97,32 @@ async def init_db():
                 tank_capacity=settings.TANK_CAPACITY,
                 maintenance_interval_hours=settings.MAINTENANCE_INTERVAL_HOURS,
                 last_maintenance_hours=settings.INITIAL_TOTAL_HOURS,
+                warning_hours=settings.MAINTENANCE_WARNING_HOURS,
+                work_hours_enabled=settings.WORK_HOURS_ENABLED,
+                work_start_time=settings.WORK_START_TIME,
+                work_end_time=settings.WORK_END_TIME,
             )
             session.add(gen)
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+        else:
+            changed = False
+            if gen.warning_hours is None:
+                gen.warning_hours = settings.MAINTENANCE_WARNING_HOURS
+                changed = True
+            if gen.work_hours_enabled is None:
+                gen.work_hours_enabled = settings.WORK_HOURS_ENABLED
+                changed = True
+            if not gen.work_start_time:
+                gen.work_start_time = settings.WORK_START_TIME
+                changed = True
+            if not gen.work_end_time:
+                gen.work_end_time = settings.WORK_END_TIME
+                changed = True
+            if changed:
+                await session.commit()
 
         # Seed admins
         for admin_item in settings.ADMIN_IDS:

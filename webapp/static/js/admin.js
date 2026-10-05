@@ -167,6 +167,23 @@ async function saveCalibInterval() {
   await saveAdminSetting({ maintenance_interval: val });
 }
 
+async function saveCalibWarning() {
+  const val = parseFloat(document.getElementById("calibWarningInput").value);
+  if (isNaN(val) || val <= 0) return alert("Вкажіть число більше 0!");
+  await saveAdminSetting({ warning_hours: val });
+}
+
+async function saveWorkHoursSettings() {
+  const enabled = document.getElementById("workHoursEnabledInput").checked;
+  const start = document.getElementById("workStartInput").value || "08:00";
+  const end = document.getElementById("workEndInput").value || "20:00";
+  await saveAdminSetting({
+    work_hours_enabled: enabled,
+    work_start_time: start,
+    work_end_time: end
+  });
+}
+
 async function saveAdminSetting(payload) {
   haptic("medium");
   try {

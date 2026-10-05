@@ -42,6 +42,12 @@ class GeneratorState(Base):
     last_air_filter_hours: Mapped[float] = mapped_column(Float, default=0.0)
     last_fuel_filter_hours: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # Сповіщення та робочий графік
+    warning_hours: Mapped[float] = mapped_column(Float, default=20.0)
+    work_hours_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    work_start_time: Mapped[str] = mapped_column(String(10), default="08:00")
+    work_end_time: Mapped[str] = mapped_column(String(10), default="20:00")
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

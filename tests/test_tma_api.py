@@ -232,6 +232,28 @@ def run_tests():
     print("Admin by username successfully recognized! is_admin:", chief_data["is_admin"])
     assert chief_data["is_admin"] is True
 
+    # 17. Testing Admin Settings persistence in DB (independent from .env)
+    print("\n17. Testing Admin Settings persistence in DB (independent from .env)...")
+    res_set = client.post("/api/admin/settings", json={
+        "warning_hours": 35.0,
+        "work_hours_enabled": True,
+        "work_start_time": "07:30",
+        "work_end_time": "21:15"
+    })
+    assert res_set.status_code == 200, res_set.text
+    status_updated = client.get("/api/status").json()
+    assert status_updated["warning_hours"] == 35.0, f"Expected 35.0, got {status_updated['warning_hours']}"
+    assert status_updated["work_hours"]["enabled"] is True
+    assert status_updated["work_hours"]["start"] == "07:30"
+    assert status_updated["work_hours"]["end"] == "21:15"
+    print("DB parameters updated and verified via status API:", status_updated["work_hours"], "warning:", status_updated["warning_hours"])
+
+    # 18. Testing input security: non-numeric string into number fields is rejected
+    print("\n18. Testing input security: blocking non-numeric input...")
+    res_bad_num = client.post("/api/fuel/add", json={"amount_liters": "not_a_number"})
+    assert res_bad_num.status_code == 422, f"Expected 422, got {res_bad_num.status_code}"
+    print("Non-numeric input safely rejected with 422 Unprocessable Entity!")
+
     print("\nALL TELEGRAM MINI APP TESTS PASSED PERFECTLY! 🚀")
 
 

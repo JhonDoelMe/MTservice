@@ -44,14 +44,15 @@ def format_duration(hours_float: float) -> str:
         return f"{minutes} хв ({hours_float:.2f} год)"
 
 
-def check_working_hours() -> Tuple[bool, str]:
+def check_working_hours(gen: Optional[GeneratorState] = None) -> Tuple[bool, str]:
     """Перевіряє, чи дозволено запуск генератора згідно з робочим графіком."""
-    if not settings.WORK_HOURS_ENABLED:
+    enabled = gen.work_hours_enabled if (gen and gen.work_hours_enabled is not None) else settings.WORK_HOURS_ENABLED
+    if not enabled:
         return True, ""
     local_now = datetime.now(get_local_tz())
     current_time_str = local_now.strftime("%H:%M")
-    start_str = settings.WORK_START_TIME
-    end_str = settings.WORK_END_TIME
+    start_str = (gen.work_start_time if (gen and gen.work_start_time) else None) or settings.WORK_START_TIME
+    end_str = (gen.work_end_time if (gen and gen.work_end_time) else None) or settings.WORK_END_TIME
     if not (start_str <= current_time_str <= end_str):
         return False, f"Запуск генератора заборонено! Графік роботи: з {start_str} до {end_str} (зараз {current_time_str})."
     return True, ""
@@ -74,10 +75,19 @@ class GeneratorService:
                 tank_capacity=settings.TANK_CAPACITY,
                 maintenance_interval_hours=settings.MAINTENANCE_INTERVAL_HOURS,
                 last_maintenance_hours=settings.INITIAL_TOTAL_HOURS,
+                warning_hours=settings.MAINTENANCE_WARNING_HOURS,
+                work_hours_enabled=settings.WORK_HOURS_ENABLED,
+                work_start_time=settings.WORK_START_TIME,
+                work_end_time=settings.WORK_END_TIME,
             )
             session.add(gen)
-            await session.commit()
-            await session.refresh(gen)
+            try:
+                await session.commit()
+                await session.refresh(gen)
+            except Exception:
+                await session.rollback()
+                result = await session.execute(select(GeneratorState).where(GeneratorState.id == 1))
+                gen = result.scalar_one_or_none()
         return gen
 
     @staticmethod
@@ -140,7 +150,7 @@ class GeneratorService:
             }
 
         # Check working hours
-        work_allowed, work_msg = check_working_hours()
+        work_allowed, work_msg = check_working_hours(gen)
 
         data = {
             "name": gen.name,
@@ -166,16 +176,16 @@ class GeneratorService:
             "last_maintenance_date_formatted": format_dt(gen.last_maintenance_date, include_time=False) if gen.last_maintenance_date else "—",
             "maintenance_interval_hours": round(gen.maintenance_interval_hours, 0),
             "hours_to_maint": round(hours_to_maint, 2),
-            "warning_hours": settings.MAINTENANCE_WARNING_HOURS,
+            "warning_hours": gen.warning_hours if gen.warning_hours is not None else settings.MAINTENANCE_WARNING_HOURS,
             # Проміжні лічильники ТО (напрацювання з моменту заміни)
             "spark_plugs_hours_ago": round(total_hours_estimate - (gen.last_spark_plugs_hours or 0.0), 1),
             "air_filter_hours_ago": round(total_hours_estimate - (gen.last_air_filter_hours or 0.0), 1),
             "fuel_filter_hours_ago": round(total_hours_estimate - (gen.last_fuel_filter_hours or 0.0), 1),
-            # Графік роботи
+            # Графік роботи з БД (залежить від налаштувань у додатку, а не тільки від .env)
             "work_hours": {
-                "enabled": settings.WORK_HOURS_ENABLED,
-                "start": settings.WORK_START_TIME,
-                "end": settings.WORK_END_TIME,
+                "enabled": gen.work_hours_enabled if gen.work_hours_enabled is not None else settings.WORK_HOURS_ENABLED,
+                "start": gen.work_start_time or settings.WORK_START_TIME,
+                "end": gen.work_end_time or settings.WORK_END_TIME,
                 "is_allowed": work_allowed,
                 "message": work_msg,
             },
@@ -200,7 +210,7 @@ class GeneratorService:
             return False, f"⚠️ Генератор вже запущено ({start_str}) оператором {gen.current_start_user_name or 'Невідомо'}!", None
 
         # Check working hours restriction
-        work_allowed, work_msg = check_working_hours()
+        work_allowed, work_msg = check_working_hours(gen)
         if not work_allowed and not custom_start_time:
             return False, f"⛔ {work_msg}", None
 
@@ -483,6 +493,11 @@ class GeneratorService:
         tank_capacity: Optional[float] = None,
         maintenance_interval: Optional[float] = None,
         last_maint_hours: Optional[float] = None,
+        warning_hours: Optional[float] = None,
+        work_hours_enabled: Optional[bool] = None,
+        work_start_time: Optional[str] = None,
+        work_end_time: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> GeneratorState:
         gen = await GeneratorService.get_state(session)
         if total_hours is not None:
@@ -497,6 +512,16 @@ class GeneratorService:
             gen.maintenance_interval_hours = maintenance_interval
         if last_maint_hours is not None:
             gen.last_maintenance_hours = last_maint_hours
+        if warning_hours is not None:
+            gen.warning_hours = warning_hours
+        if work_hours_enabled is not None:
+            gen.work_hours_enabled = work_hours_enabled
+        if work_start_time is not None:
+            gen.work_start_time = work_start_time
+        if work_end_time is not None:
+            gen.work_end_time = work_end_time
+        if name is not None:
+            gen.name = name
 
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await session.commit()

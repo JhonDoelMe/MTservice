@@ -300,11 +300,22 @@ async function loadStatus() {
     if (ffEl) ffEl.innerText = `${(data.fuel_filter_hours_ago || 0).toFixed(1)} мч тому`;
 
     // Tab 5 Settings sync placeholders
-    document.getElementById("calibHoursInput").placeholder = data.base_total_hours;
-    document.getElementById("calibFuelInput").placeholder = data.current_fuel;
-    document.getElementById("calibRateInput").placeholder = data.fuel_rate;
-    document.getElementById("calibTankInput").placeholder = data.tank_capacity;
-    document.getElementById("calibIntervalInput").placeholder = data.maintenance_interval_hours;
+    const setPh = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
+    setPh("calibHoursInput", data.base_total_hours);
+    setPh("calibFuelInput", data.current_fuel);
+    setPh("calibRateInput", data.fuel_rate);
+    setPh("calibTankInput", data.tank_capacity);
+    setPh("calibIntervalInput", data.maintenance_interval_hours);
+    setPh("calibWarningInput", data.warning_hours || 20);
+
+    const whChk = document.getElementById("workHoursEnabledInput");
+    const wsIn = document.getElementById("workStartInput");
+    const weIn = document.getElementById("workEndInput");
+    if (whChk && data.work_hours && document.activeElement !== wsIn && document.activeElement !== weIn) {
+      whChk.checked = !!data.work_hours.enabled;
+      if (wsIn && !wsIn.value) wsIn.value = data.work_hours.start || "08:00";
+      if (weIn && !weIn.value) weIn.value = data.work_hours.end || "20:00";
+    }
 
   } catch (e) {
     console.error("Помилка оновлення статусу:", e);
