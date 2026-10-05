@@ -263,6 +263,7 @@ class GeneratorService:
         new_total_hours = round(gen.total_hours + duration_hours, 2)
 
         run_log = RunLog(
+            generator_id=gen.id or 1,
             start_time=start_time,
             stop_time=stop_time,
             duration_hours=round(duration_hours, 2),
@@ -325,6 +326,7 @@ class GeneratorService:
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         fuel_log = FuelLog(
+            generator_id=gen.id or 1,
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             amount_liters=amount_liters,
             fuel_before=fuel_before,
@@ -388,6 +390,7 @@ class GeneratorService:
         final_title = title or default_title
 
         maint_log = MaintenanceLog(
+            generator_id=gen.id or 1,
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             hours_at_maintenance=hours_at_maint,
             next_maintenance_hours=next_maint_hours,
@@ -465,6 +468,7 @@ class GeneratorService:
         gen.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         audit = AuditResetLog(
+            generator_id=gen.id or 1,
             timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             reset_type=reset_type,
             reason=reason.strip(),

@@ -254,6 +254,27 @@ def run_tests():
     assert res_bad_num.status_code == 422, f"Expected 422, got {res_bad_num.status_code}"
     print("Non-numeric input safely rejected with 422 Unprocessable Entity!")
 
+    # 19. Testing generator_id persistence on logs
+    print("\n19. Testing generator_id column persistence on logs...")
+    from bot.database.db import get_session_maker
+    from bot.database.models import RunLog, FuelLog, MaintenanceLog, AuditResetLog
+    from sqlalchemy import select
+
+    async def verify_generator_ids():
+        sm = get_session_maker()
+        async with sm() as sess:
+            r = (await sess.execute(select(RunLog))).scalars().first()
+            assert r is not None and r.generator_id == 1, f"RunLog generator_id: {r.generator_id if r else None}"
+            f = (await sess.execute(select(FuelLog))).scalars().first()
+            assert f is not None and f.generator_id == 1, f"FuelLog generator_id: {f.generator_id if f else None}"
+            m = (await sess.execute(select(MaintenanceLog))).scalars().first()
+            assert m is not None and m.generator_id == 1, f"MaintenanceLog generator_id: {m.generator_id if m else None}"
+            a = (await sess.execute(select(AuditResetLog))).scalars().first()
+            assert a is not None and a.generator_id == 1, f"AuditResetLog generator_id: {a.generator_id if a else None}"
+
+    asyncio.run(verify_generator_ids())
+    print("All logs have valid generator_id=1!")
+
     print("\nALL TELEGRAM MINI APP TESTS PASSED PERFECTLY! 🚀")
 
 

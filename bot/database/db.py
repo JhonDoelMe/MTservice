@@ -38,29 +38,58 @@ def get_session_maker():
 
 
 async def apply_migrations(engine):
-    """Safely adds missing columns to existing tables for both Postgres and SQLite."""
-    try:
-        async with engine.begin() as conn:
-            dialect = engine.dialect.name
-            columns_to_add = [
-                ("generator_state", "warning_hours", "FLOAT DEFAULT 20.0"),
-                ("generator_state", "work_hours_enabled", "BOOLEAN DEFAULT FALSE"),
-                ("generator_state", "work_start_time", "VARCHAR(10) DEFAULT '08:00'"),
-                ("generator_state", "work_end_time", "VARCHAR(10) DEFAULT '20:00'"),
-            ]
-            for table, col, col_def in columns_to_add:
-                try:
-                    if dialect == "postgresql":
-                        await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}"))
-                    else:
-                        pragma_res = await conn.execute(text(f"PRAGMA table_info({table})"))
-                        existing_cols = [row[1] for row in pragma_res.fetchall()]
-                        if col not in existing_cols:
-                            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
-                except Exception as col_err:
-                    logger.debug(f"Migration check {table}.{col}: {col_err}")
-    except Exception as err:
-        logger.warning(f"Помилка перевірки міграцій: {err}")
+    """Safely adds missing columns and relaxes constraints for Postgres and SQLite."""
+    dialect = engine.dialect.name
+    columns_to_add = [
+        ("generator_state", "warning_hours", "FLOAT DEFAULT 20.0"),
+        ("generator_state", "work_hours_enabled", "BOOLEAN DEFAULT FALSE"),
+        ("generator_state", "work_start_time", "VARCHAR(10) DEFAULT '08:00'"),
+        ("generator_state", "work_end_time", "VARCHAR(10) DEFAULT '20:00'"),
+        ("run_logs", "generator_id", "INTEGER DEFAULT 1"),
+        ("fuel_logs", "generator_id", "INTEGER DEFAULT 1"),
+        ("maintenance_logs", "generator_id", "INTEGER DEFAULT 1"),
+        ("audit_reset_logs", "generator_id", "INTEGER DEFAULT 1"),
+    ]
+    for table, col, col_def in columns_to_add:
+        try:
+            async with engine.begin() as conn:
+                if dialect == "postgresql":
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}"))
+                else:
+                    pragma_res = await conn.execute(text(f"PRAGMA table_info({table})"))
+                    existing_cols = [row[1] for row in pragma_res.fetchall()]
+                    if col not in existing_cols:
+                        await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
+        except Exception as col_err:
+            logger.debug(f"Migration check {table}.{col}: {col_err}")
+
+    # For PostgreSQL: relax NOT NULL constraints on legacy or optional columns
+    if dialect == "postgresql":
+        relax_statements = [
+            "ALTER TABLE run_logs ALTER COLUMN generator_id DROP NOT NULL",
+            "ALTER TABLE run_logs ALTER COLUMN generator_id SET DEFAULT 1",
+            "UPDATE run_logs SET generator_id = 1 WHERE generator_id IS NULL",
+            "ALTER TABLE fuel_logs ALTER COLUMN generator_id DROP NOT NULL",
+            "ALTER TABLE fuel_logs ALTER COLUMN generator_id SET DEFAULT 1",
+            "UPDATE fuel_logs SET generator_id = 1 WHERE generator_id IS NULL",
+            "ALTER TABLE maintenance_logs ALTER COLUMN generator_id DROP NOT NULL",
+            "ALTER TABLE maintenance_logs ALTER COLUMN generator_id SET DEFAULT 1",
+            "UPDATE maintenance_logs SET generator_id = 1 WHERE generator_id IS NULL",
+            "ALTER TABLE audit_reset_logs ALTER COLUMN generator_id DROP NOT NULL",
+            "ALTER TABLE audit_reset_logs ALTER COLUMN generator_id SET DEFAULT 1",
+            "UPDATE audit_reset_logs SET generator_id = 1 WHERE generator_id IS NULL",
+            "ALTER TABLE fuel_logs ALTER COLUMN receipt_number DROP NOT NULL",
+            "ALTER TABLE fuel_logs ALTER COLUMN delivered_by DROP NOT NULL",
+            "ALTER TABLE generator_state ALTER COLUMN fuel_type DROP NOT NULL",
+            "ALTER TABLE generator_state ALTER COLUMN fuel_price DROP NOT NULL",
+            "ALTER TABLE generator_state ALTER COLUMN auto_update_price DROP NOT NULL",
+        ]
+        for stmt in relax_statements:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(text(stmt))
+            except Exception as relax_err:
+                logger.debug(f"Constraint relax notice '{stmt}': {relax_err}")
 
 
 async def init_db():
