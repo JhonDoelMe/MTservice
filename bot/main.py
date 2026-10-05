@@ -21,13 +21,10 @@ from bot.database.cache import cache
 from bot.handlers import setup_routers
 from bot.middlewares import AuthMiddleware
 from bot.services.notify_service import background_monitoring_loop
+from bot.logging_config import setup_logging
 from webapp.server import app as webapp_app
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

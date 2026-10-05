@@ -23,3 +23,8 @@ data/*.xlsx
 .vscode/
 *.swp
 *.swo
+
+# Logs
+logs/
+*.log
+
